@@ -953,6 +953,11 @@ class JustDoItApp:
 
 
 def main():
+    if platform.system() == "Windows":
+        # python.exe とは別のアプリとして扱わせ、タスクバーに Python ではなくアプリのアイコンを出す
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("JustDoIt.App")
     root = tk.Tk()
     JustDoItApp(root)
     root.mainloop()
