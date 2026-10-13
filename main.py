@@ -29,18 +29,32 @@ DASHBOARD_DAYS = 14
 
 # 週次レポート配信サービス（開発者がデプロイした gas/report_service/ の WebアプリURL）
 # 環境変数 JUSTDOIT_REPORT_URL が設定されていればそちらを優先する
-REPORT_SERVICE_URL = ""
+REPORT_SERVICE_URL = "https://script.google.com/macros/s/AKfycbwsGmQMb4egG6jISjSEh1KR3QIEDJ-AxTSdWUhMFVB9GWOn2f1WZEg6koFYFOS8_jutpQ/exec"
 # 登録直後のレポートが空にならないよう、登録時に送る過去の記録の日数
 REPORT_BACKFILL_DAYS = 14
 
 MENU_GEOMETRY = "320x340"
 
-# OSに合わせて日本語フォントを切り替える
+# 画面の配色（作業の邪魔をしないよう、色はアクセント1色に絞る）
+COLOR_BG = "#f7f7f5"
+COLOR_TEXT = "#222222"
+COLOR_MUTED = "#8a8a86"
+COLOR_BORDER = "#dcdcd8"
+COLOR_SUBTLE = "#ebebe7"
+COLOR_SUBTLE_HOVER = "#e0e0db"
+COLOR_ACCENT = "#2f6f62"
+COLOR_ACCENT_HOVER = "#265a50"
+COLOR_ERROR = "#b3261e"
+
+# OSに合わせて日本語フォントを切り替える（画面とグラフの両方）
 if platform.system() == "Darwin":  # Macの場合
+    UI_FONT_FAMILY = "Hiragino Sans"
     rcParams["font.sans-serif"] = ["Hiragino Sans", "Hiragino Kaku Gothic ProN", "Arial"]
 elif platform.system() == "Windows":  # Windowsの場合
+    UI_FONT_FAMILY = "Yu Gothic UI"
     rcParams["font.sans-serif"] = ["Yu Gothic", "Meiryo", "MS Gothic", "Arial"]
 else:  # Linux等の場合
+    UI_FONT_FAMILY = "Noto Sans CJK JP"
     rcParams["font.sans-serif"] = ["Noto Sans CJK JP", "IPAexGothic", "DejaVu Sans"]
 rcParams["axes.unicode_minus"] = False
 
@@ -315,19 +329,66 @@ def format_hours_mins(total_mins):
 # ==========================================
 # GUI
 # ==========================================
+def ui_font(size=12, bold=False):
+    return (UI_FONT_FAMILY, size, "bold") if bold else (UI_FONT_FAMILY, size)
+
+
+def make_label(parent, text="", size=12, color=COLOR_TEXT, bold=False, **options):
+    return tk.Label(parent, text=text, font=ui_font(size, bold), fg=color, bg=parent["bg"], **options)
+
+
+def make_button(parent, text, command, primary=False):
+    """平らなボタン（tk.Button は Mac で背景色が反映されないため Label で作る）"""
+    if primary:
+        bg, hover_bg, fg = COLOR_ACCENT, COLOR_ACCENT_HOVER, "white"
+    else:
+        bg, hover_bg, fg = COLOR_SUBTLE, COLOR_SUBTLE_HOVER, COLOR_TEXT
+    button = tk.Label(
+        parent, text=text, font=ui_font(12, bold=primary), fg=fg, bg=bg, pady=9, cursor="hand2"
+    )
+    button.bind("<Button-1>", lambda event: command())
+    button.bind("<Enter>", lambda event: button.config(bg=hover_bg))
+    button.bind("<Leave>", lambda event: button.config(bg=bg))
+    return button
+
+
+def make_link(parent, text, command):
+    """目立たせたくない操作用の、文字だけのボタン"""
+    link = make_label(parent, text, size=10, color=COLOR_MUTED, cursor="hand2")
+    link.bind("<Button-1>", lambda event: command())
+    link.bind("<Enter>", lambda event: link.config(fg=COLOR_TEXT))
+    link.bind("<Leave>", lambda event: link.config(fg=COLOR_MUTED))
+    return link
+
+
+def make_entry(parent, **options):
+    return tk.Entry(
+        parent,
+        font=ui_font(12),
+        relief="flat",
+        bg="white",
+        fg=COLOR_TEXT,
+        insertbackground=COLOR_TEXT,
+        highlightthickness=1,
+        highlightbackground=COLOR_BORDER,
+        highlightcolor=COLOR_ACCENT,
+        **options,
+    )
+
+
+def format_clock(seconds):
+    mins, secs = divmod(seconds, 60)
+    return f"{mins:02d}:{secs:02d}"
+
+
 class JustDoItApp:
 
     def __init__(self, root):
         self.root = root
         self.root.title(APP_NAME)
+        self.root.configure(bg=COLOR_BG)
         self.after_id = None
         self.running = False
-
-        # 画面中央に配置する
-        window_width, window_height = 320, 340
-        x = (self.root.winfo_screenwidth() - window_width) // 2
-        y = (self.root.winfo_screenheight() - window_height) // 2
-        self.root.geometry(f"{window_width}x{window_height}+{x}+{y}")
 
         self.create_main_menu()
         # 前回送れなかった記録があれば再送する
@@ -354,84 +415,78 @@ class JustDoItApp:
             self.root.lift()
             self.root.focus_force()
 
-    def create_main_menu(self):
-        """起動時のメインメニュー（ボタン一覧）"""
+    def resize_window(self, width, height):
+        """ウィンドウの中心を保ったままサイズを変える（大きい画面が右下に寄らないように）
+
+        起動直後はPC画面の中央に置く。はみ出す場合はPC画面内に収まるよう位置を寄せる。
+        """
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        if self.root.winfo_ismapped():
+            self.root.update_idletasks()
+            center_x = self.root.winfo_x() + self.root.winfo_width() // 2
+            center_y = self.root.winfo_y() + self.root.winfo_height() // 2
+        else:
+            center_x, center_y = screen_width // 2, screen_height // 2
+
+        x = max(0, min(center_x - width // 2, screen_width - width))
+        y = max(0, min(center_y - height // 2, screen_height - height))
+        self.root.geometry(f"{width}x{height}+{x}+{y}")
+
+    def make_screen(self, geometry=MENU_GEOMETRY):
+        """前の画面を消して、余白付きの新しい画面の土台を返す"""
         self.clear_window()
-        self.root.geometry(MENU_GEOMETRY)
+        self.resize_window(*map(int, geometry.split("x")))
+        screen = tk.Frame(self.root, bg=COLOR_BG, padx=24, pady=20)
+        screen.pack(fill="both", expand=True)
+        return screen
 
-        tk.Label(self.root, text="さあ、どうする？", font=("", 16, "bold")).pack(pady=15)
+    def make_header(self, screen, title):
+        """タイトルと「戻る」を並べた見出し"""
+        header = tk.Frame(screen, bg=COLOR_BG)
+        header.pack(fill="x", pady=(0, 16))
+        make_label(header, title, size=16, bold=True).pack(side="left")
+        make_link(header, "戻る", self.create_main_menu).pack(side="right")
 
-        tk.Button(
-            self.root,
-            text="🔥 5分やる",
-            width=25,
-            command=lambda: self.start_timer(FOCUS_SHORT_SECONDS, "5分集中"),
-        ).pack(pady=5)
+    def create_main_menu(self):
+        """起動時のメインメニュー（迷わないよう、目立つボタンは「5分だけやる」の1つだけ）"""
+        screen = self.make_screen(MENU_GEOMETRY)
 
-        tk.Button(
-            self.root,
-            text="🍅 25分やる",
-            width=25,
-            command=lambda: self.start_timer(FOCUS_LONG_SECONDS, "25分集中"),
-        ).pack(pady=5)
+        make_label(screen, "さあ、どうする？", size=16, bold=True).pack(pady=(28, 24))
+        make_button(
+            screen,
+            "5分だけやる",
+            lambda: self.start_timer(FOCUS_SHORT_SECONDS, "5分"),
+            primary=True,
+        ).pack(fill="x", pady=4)
+        make_button(
+            screen, "25分やる", lambda: self.start_timer(FOCUS_LONG_SECONDS, "25分")
+        ).pack(fill="x", pady=4)
 
-        tk.Button(
-            self.root,
-            text="📝 記録する（手動）",
-            width=25,
-            command=self.manual_record_flow,
-        ).pack(pady=5)
-
-        tk.Button(
-            self.root,
-            text="📊 ダッシュボードを表示",
-            width=25,
-            bg="#e0f7fa",
-            command=self.show_dashboard,
-        ).pack(pady=10)
-
-        tk.Button(
-            self.root,
-            text="⚙️ 設定",
-            width=25,
-            command=self.show_settings,
-        ).pack(pady=5)
-
-        statuses = []
-        if is_report_registered():
-            statuses.append("📧 週次レポート: ON")
-        if get_gas_url():
-            statuses.append("☁️ スプレッドシート連携: ON")
-        sync_text = "　".join(statuses) or "💾 ローカル保存のみ"
-        tk.Label(self.root, text=sync_text, fg="gray").pack(pady=5)
+        links = tk.Frame(screen, bg=COLOR_BG)
+        links.pack(side="bottom")
+        for i, (text, command) in enumerate(
+            [("記録する", self.manual_record_flow), ("振り返り", self.show_dashboard), ("設定", self.show_settings)]
+        ):
+            if i:
+                make_label(links, "・", size=10, color=COLOR_BORDER).pack(side="left", padx=4)
+            make_link(links, text, command).pack(side="left")
 
     # ---------- 集中タイマー ----------
     def start_timer(self, duration_seconds, timer_name):
         """タイマーを開始する処理"""
-        self.clear_window()
-        self.timer_type = timer_name
+        screen = self.make_screen()
         self.target_seconds = duration_seconds
         self.start_time = datetime.now()
         self.running = True
 
-        self.label = tk.Label(self.root, text=f"集中... ({timer_name})", font=("", 14))
-        self.label.pack(pady=20)
+        make_label(screen, f"集中（{timer_name}）", size=11, color=COLOR_MUTED).pack(pady=(24, 0))
+        self.label = make_label(screen, format_clock(duration_seconds), size=44)
+        self.label.pack()
 
-        # ⏹️ 途中でやめるボタン（確認なしで即座に経過時間を記録して戻る）
-        tk.Button(
-            self.root,
-            text="途中でやめる（記録する）",
-            bg="#ffebee",
-            command=self.abort_timer,
-            width=25,
-        ).pack(pady=5)
-
-        tk.Button(
-            self.root,
-            text="記録せずにメニューに戻る",
-            command=self.create_main_menu,
-            width=25,
-        ).pack(pady=5)
+        make_link(screen, "記録せずにやめる", self.create_main_menu).pack(side="bottom", pady=(10, 0))
+        # 途中で終えても、そこまでの時間を記録できる
+        make_button(screen, "ここで終える", self.abort_timer).pack(side="bottom", fill="x")
 
         self.check_time()
 
@@ -443,178 +498,133 @@ class JustDoItApp:
         remaining = self.target_seconds - int(elapsed.total_seconds())
 
         if remaining > 0:
-            mins, secs = divmod(remaining, 60)
-            self.label.config(text=f"集中！残り {mins}分 {secs:02d}秒")
+            self.label.config(text=format_clock(remaining))
             self.after_id = self.root.after(1000, self.check_time)
         else:
             self.after_id = None
             self.time_up()
 
     def abort_timer(self):
-        """途中でやめるボタンが押されたときの処理（確認なしで直ちに経過時間を記録）"""
+        """「ここで終える」が押されたときの処理（経過時間を記録してメニューへ）"""
         self.cancel_timer()
 
         elapsed_secs = int((datetime.now() - self.start_time).total_seconds())
         # 1分未満で中断した場合でも最低「1分」として切り上げる
         duration_mins = max(1, (elapsed_secs + 59) // 60)
-
-        self.bring_to_front(True)
-        task = simpledialog.askstring(
-            "中断記録",
-            f"ここまで約{duration_mins}分経過しました。\n今回の作業内容は何ですか？",
-            parent=self.root,
-        )
-        self.bring_to_front(False)
-
-        # 作業内容が入力された場合のみ、記録を保存する
-        if task and task.strip():
-            self.save_record(task.strip(), duration_mins)
-
-        self.create_main_menu()
+        self.ask_task("おつかれさまでした", duration_mins, after_save=self.create_main_menu)
 
     def time_up(self):
-        """タイマー終了時の処理"""
+        """タイマー終了時の処理（音で知らせて前面に出し、そのまま記録画面へ）"""
         self.running = False
         self.root.bell()
         self.bring_to_front(True)
-        messagebox.showinfo("時間です", "終了！お疲れ様でした。", parent=self.root)
+        self.ask_task(
+            "おつかれさまでした",
+            self.target_seconds // 60,
+            after_save=self.start_break_timer,
+            save_text="記録して休憩する",
+        )
 
-        # 作業内容を入力するための「専用サブウインドウ (Toplevel)」を作成
-        input_win = tk.Toplevel(self.root)
-        input_win.title("作業完了入力")
-        input_win.geometry("280x180")
-        input_win.attributes("-topmost", True)
-        input_win.grab_set()
+    def ask_task(self, heading, duration_mins, after_save, save_text="記録する"):
+        """やったことを入力して記録する画面（タイマー終了時・途中終了時で共通）"""
+        screen = self.make_screen()
 
-        tk.Label(input_win, text="今回の作業内容は何ですか？").pack(pady=(15, 0))
-        task_entry = tk.Entry(input_win, width=30)
-        task_entry.pack(pady=5)
-        task_entry.focus_set()  # 自動でカーソルをテキストボックスに合わせる
+        make_label(screen, heading, size=16, bold=True).pack(pady=(16, 0))
+        make_label(screen, f"{duration_mins}分", size=11, color=COLOR_MUTED).pack()
 
-        def save_and_close(event=None):
+        make_label(screen, "何をやった？", size=11).pack(anchor="w", pady=(20, 4))
+        task_entry = make_entry(screen)
+        task_entry.pack(fill="x", ipady=4)
+        task_entry.focus_set()
+        error_label = make_label(screen, size=10, color=COLOR_ERROR)
+        error_label.pack(anchor="w")
+
+        def save(event=None):
             task = task_entry.get().strip()
             if not task:
-                messagebox.showwarning(
-                    "入力エラー", "作業内容を入力してください。", parent=input_win
-                )
+                error_label.config(text="やったことを入力してください")
                 return
-
-            duration_mins = self.target_seconds // 60
-            self.save_record(task, duration_mins)
-            messagebox.showinfo(
-                "保存完了",
-                f"「{task} ({duration_mins}分)」の記録を保存しました！",
-                parent=input_win,
-            )
-
-            # 入力ウインドウを閉じ、最前面固定を解除して、休憩タイマーへ移行
-            input_win.destroy()
             self.bring_to_front(False)
-            self.start_break_timer()
+            self.save_record(task, duration_mins)
+            after_save()
 
-        def close_without_saving():
-            input_win.destroy()
+        def skip():
             self.bring_to_front(False)
             self.create_main_menu()
 
-        tk.Button(input_win, text="保存する", command=save_and_close, width=15).pack(pady=10)
-        task_entry.bind("<Return>", save_and_close)
-        # ✖ボタンでウインドウが閉じられた場合は記録せずメインメニューに戻る
-        input_win.protocol("WM_DELETE_WINDOW", close_without_saving)
+        make_link(screen, "記録しない", skip).pack(side="bottom", pady=(10, 0))
+        make_button(screen, save_text, save, primary=True).pack(side="bottom", fill="x")
+        task_entry.bind("<Return>", save)
 
     # ---------- 休憩タイマー ----------
     def start_break_timer(self):
         """10分間の休憩タイマー処理"""
-        self.clear_window()
+        screen = self.make_screen()
         self.break_start_time = datetime.now()
         self.running = True
 
-        self.break_label = tk.Label(self.root, text="", font=("", 14))
-        self.break_label.pack(pady=30)
+        make_label(screen, "休憩", size=11, color=COLOR_MUTED).pack(pady=(24, 0))
+        self.break_label = make_label(screen, format_clock(BREAK_SECONDS), size=44)
+        self.break_label.pack()
 
-        tk.Button(
-            self.root,
-            text="休憩を終えてメニューに戻る",
-            command=self.create_main_menu,
-            width=25,
-        ).pack(pady=10)
+        make_button(screen, "休憩を終える", self.create_main_menu).pack(side="bottom", fill="x")
 
         self.check_break_time()
 
     def check_break_time(self):
-        """休憩時間のカウントダウン"""
+        """休憩時間のカウントダウン（終わったら音で知らせてメニューへ戻る）"""
         if not self.running:
             return
         elapsed = datetime.now() - self.break_start_time
         remaining = BREAK_SECONDS - int(elapsed.total_seconds())
 
         if remaining > 0:
-            mins, secs = divmod(remaining, 60)
-            self.break_label.config(
-                text=f"休憩中... (最長{BREAK_SECONDS // 60}分)\n残り {mins}分 {secs:02d}秒"
-            )
+            self.break_label.config(text=format_clock(remaining))
             self.after_id = self.root.after(1000, self.check_break_time)
         else:
             self.after_id = None
             self.running = False
             self.root.bell()
             self.bring_to_front(True)
-            messagebox.showinfo(
-                "休憩終了",
-                f"{BREAK_SECONDS // 60}分経過しました！次の作業へ移りましょう。",
-                parent=self.root,
-            )
-            self.bring_to_front(False)
             self.create_main_menu()
+            self.bring_to_front(False)
 
     # ---------- 手動記録 ----------
     def manual_record_flow(self):
         """手動記録用の画面に切り替える"""
-        self.clear_window()
+        screen = self.make_screen()
+        self.make_header(screen, "記録する")
 
-        tk.Label(self.root, text="手動記録", font=("", 16, "bold")).pack(pady=15)
-
-        tk.Label(self.root, text="やった内容は何ですか？").pack(pady=(5, 0))
-        task_entry = tk.Entry(self.root, width=25)
-        task_entry.pack(pady=5)
+        make_label(screen, "やったこと", size=11).pack(anchor="w", pady=(0, 4))
+        task_entry = make_entry(screen)
+        task_entry.pack(fill="x", ipady=4)
         task_entry.focus_set()
 
-        tk.Label(self.root, text="何分間実施しましたか？（数字のみ）").pack(pady=(5, 0))
-        mins_entry = tk.Entry(self.root, width=15)
-        mins_entry.pack(pady=5)
+        make_label(screen, "時間（分）", size=11).pack(anchor="w", pady=(12, 4))
+        mins_entry = make_entry(screen, width=8)
+        mins_entry.pack(anchor="w", ipady=4)
+
+        error_label = make_label(screen, size=10, color=COLOR_ERROR)
+        error_label.pack(anchor="w")
 
         def save_and_back(event=None):
             task = task_entry.get().strip()
             mins_str = mins_entry.get().strip()
 
             if not task:
-                messagebox.showwarning(
-                    "入力エラー", "作業内容を入力してください。", parent=self.root
-                )
+                error_label.config(text="やったことを入力してください")
+                task_entry.focus_set()
                 return
 
             if not mins_str.isdigit() or not 1 <= int(mins_str) <= MAX_MANUAL_MINUTES:
-                messagebox.showwarning(
-                    "入力エラー",
-                    f"実施時間は 1〜{MAX_MANUAL_MINUTES} の整数（分）で入力してください。",
-                    parent=self.root,
-                )
+                error_label.config(text=f"時間は 1〜{MAX_MANUAL_MINUTES} の数字で入力してください")
                 mins_entry.focus_set()
                 return
 
-            duration = int(mins_str)
-            self.save_record(task, duration)
-            messagebox.showinfo(
-                "保存完了",
-                f"「{task} ({duration}分)」の記録を保存しました！",
-                parent=self.root,
-            )
+            self.save_record(task, int(mins_str))
             self.create_main_menu()
 
-        tk.Button(self.root, text="保存する", command=save_and_back, width=25).pack(pady=10)
-        tk.Button(
-            self.root, text="メニューに戻る", command=self.create_main_menu, width=25
-        ).pack(pady=5)
+        make_button(screen, "記録する", save_and_back, primary=True).pack(side="bottom", fill="x")
 
         # Enterキーでの保存対応
         task_entry.bind("<Return>", lambda event: mins_entry.focus_set())
@@ -720,7 +730,7 @@ class JustDoItApp:
 
         messagebox.showinfo(
             "登録完了",
-            "登録が完了しました！\n毎週月曜 9時ごろ、先週の振り返りレポートがメールで届きます。",
+            "登録が完了しました。\n毎週月曜 9時ごろ、先週の振り返りレポートがメールで届きます。",
             parent=self.root,
         )
         self.show_settings()
@@ -752,44 +762,43 @@ class JustDoItApp:
         except OSError as e:
             messagebox.showerror("保存エラー", f"設定を保存できませんでした:\n{e}", parent=self.root)
             return
-        messagebox.showinfo("配信停止", "週次レポートの配信を停止しました。", parent=self.root)
         self.show_settings()
 
     # ---------- 設定 ----------
     def show_settings(self):
         """週次レポートの登録と、GAS の WebアプリURL を設定する画面"""
-        self.clear_window()
-        self.root.geometry("460x520")
+        screen = self.make_screen("460x560")
+        self.make_header(screen, "設定")
 
-        tk.Label(self.root, text="⚙️ 設定", font=("", 16, "bold")).pack(pady=10)
+        make_label(screen, "週次レポート", bold=True).pack(anchor="w")
+        make_label(
+            screen, "毎週月曜 9時ごろ、先週の振り返りがメールで届きます。", size=10, color=COLOR_MUTED
+        ).pack(anchor="w", pady=(2, 8))
+        self.build_report_settings(screen)
 
-        report_frame = tk.LabelFrame(
-            self.root, text="📧 週次レポート（毎週月曜 9時ごろメールでお届け）", padx=10, pady=8
-        )
-        report_frame.pack(fill="x", padx=12, pady=5)
-        self.build_report_settings(report_frame)
+        tk.Frame(screen, height=1, bg=COLOR_BORDER).pack(fill="x", pady=16)
 
-        gas_frame = tk.LabelFrame(
-            self.root, text="☁️ 自分のスプレッドシートに記録（上級者向け・任意）", padx=10, pady=8
-        )
-        gas_frame.pack(fill="x", padx=12, pady=5)
+        make_label(screen, "自分のスプレッドシートに記録", bold=True).pack(anchor="w")
+        make_label(
+            screen,
+            "上級者向け・任意。自分でデプロイした GAS の WebアプリURL（空欄なら使わない）",
+            size=10,
+            color=COLOR_MUTED,
+            wraplength=410,
+            justify="left",
+        ).pack(anchor="w", pady=(2, 8))
 
-        tk.Label(
-            gas_frame,
-            text="自分でデプロイした GAS の WebアプリURL（空欄なら使わない）",
-        ).pack()
-
-        url_entry = tk.Entry(gas_frame, width=50)
+        url_entry = make_entry(screen)
         url_entry.insert(0, load_config().get("gas_url", ""))
-        url_entry.pack(pady=5)
+        url_entry.pack(fill="x", ipady=4)
+        status_label = make_label(screen, size=10, wraplength=410, justify="left")
 
-        def save_and_back(event=None):
+        def save_url(event=None):
             url = url_entry.get().strip()
             if url and not is_valid_gas_url(url):
-                messagebox.showwarning(
-                    "入力エラー",
-                    "URL は https://script.google.com/ から始まる GAS の WebアプリURL を入力してください。",
-                    parent=self.root,
+                status_label.config(
+                    text="https://script.google.com/ から始まる GAS の WebアプリURL を入力してください",
+                    fg=COLOR_ERROR,
                 )
                 return
             config = load_config()
@@ -799,137 +808,136 @@ class JustDoItApp:
             except OSError as e:
                 messagebox.showerror("保存エラー", f"設定を保存できませんでした:\n{e}", parent=self.root)
                 return
-            messagebox.showinfo("保存完了", "設定を保存しました。", parent=self.root)
-            self.create_main_menu()
+            status_label.config(text="保存しました", fg=COLOR_MUTED)
 
-        tk.Button(gas_frame, text="URLを保存する", command=save_and_back, width=20).pack(pady=5)
-        url_entry.bind("<Return>", save_and_back)
+        make_button(screen, "URLを保存", save_url).pack(fill="x", pady=(8, 0))
+        status_label.pack(anchor="w", pady=(4, 0))
+        url_entry.bind("<Return>", save_url)
 
-        tk.Label(self.root, text=f"保存先: {get_data_dir()}", fg="gray", wraplength=430).pack(
-            pady=5
-        )
-        tk.Button(
-            self.root, text="メニューに戻る", command=self.create_main_menu, width=25
-        ).pack(pady=5)
+        make_label(
+            screen,
+            f"保存先: {get_data_dir()}",
+            size=9,
+            color=COLOR_MUTED,
+            wraplength=410,
+            justify="left",
+        ).pack(side="bottom", anchor="w")
 
     def build_report_settings(self, frame):
         """設定画面の週次レポート欄（登録状態に応じて表示を切り替える）"""
         config = load_config()
 
         if not get_report_service_url():
-            tk.Label(
+            make_label(
                 frame,
-                text="このビルドでは配信サービスが設定されていません。\n（開発者向け: README の「週次レポート配信サービス」を参照）",
-                fg="gray",
-            ).pack()
+                "このビルドでは配信サービスが設定されていません。\n（開発者向け: README の「週次レポート配信サービス」を参照）",
+                size=10,
+                color=COLOR_MUTED,
+                wraplength=410,
+                justify="left",
+            ).pack(anchor="w")
             return
 
         if config.get("report_token"):
-            tk.Label(frame, text=f"✅ 登録中: {config.get('report_email', '')}").pack()
-            tk.Label(
-                frame, text="記録するだけで、先週の振り返りが毎週自動で届きます。", fg="gray"
-            ).pack()
-            tk.Button(
-                frame, text="配信を停止する", command=self.unregister_report, width=20
-            ).pack(pady=5)
+            make_label(frame, f"登録中: {config.get('report_email', '')}", size=11).pack(anchor="w")
+            make_button(frame, "配信を停止する", self.unregister_report).pack(fill="x", pady=(8, 0))
             return
 
-        tk.Label(
-            frame,
-            text="メールアドレスを登録するだけで、毎週の振り返りが自動で届きます。",
-        ).pack()
-        email_entry = tk.Entry(frame, width=40)
-        email_entry.pack(pady=5)
+        email_entry = make_entry(frame)
+        email_entry.pack(fill="x", ipady=4)
         email_entry.focus_set()
 
         def register(event=None):
             self.register_report(email_entry.get())
 
-        tk.Button(frame, text="確認コードを送る", command=register, width=20).pack(pady=5)
+        make_button(frame, "確認コードを送る", register, primary=True).pack(fill="x", pady=(8, 0))
         email_entry.bind("<Return>", register)
 
-    # ---------- ダッシュボード ----------
+    # ---------- 振り返り（ダッシュボード） ----------
     def show_dashboard(self):
-        """ローカルのCSVを読み込んでTkinter画面内にグラフを埋め込んで表示する"""
+        """ローカルのCSVを読み込んで、合計時間・日別グラフ・よくやったことを表示する"""
         csv_path = get_csv_path()
+        no_record_message = "まだ記録がありません。\nまずは5分やってみましょう。"
 
         if not csv_path.exists():
-            messagebox.showwarning(
-                "警告",
-                f"作業記録ファイルが見つかりません:\n{csv_path}\nまずは記録を保存してください！",
-            )
+            messagebox.showinfo("振り返り", no_record_message, parent=self.root)
             return
 
         try:
             records = load_records(csv_path)
         except Exception as e:
-            messagebox.showerror("エラー", f"データの読み込み中にエラーが発生しました:\n{e}")
+            messagebox.showerror("エラー", f"データの読み込み中にエラーが発生しました:\n{e}", parent=self.root)
             return
 
         by_task = summarize_by_task(records)
         if by_task.empty:
-            messagebox.showinfo("情報", "集計できる有効な時間データが見つかりませんでした。")
+            messagebox.showinfo("振り返り", no_record_message, parent=self.root)
             return
         by_day = summarize_by_day(records)
 
-        self.clear_window()
-        self.root.geometry("820x600")
+        screen = self.make_screen("720x540")
+        self.make_header(screen, "振り返り")
 
-        tk.Label(self.root, text="📊 作業時間分析ダッシュボード", font=("", 14, "bold")).pack(
-            pady=10
+        # 合計時間（今日・直近7日・累計）
+        stats = tk.Frame(screen, bg=COLOR_BG)
+        stats.pack(fill="x", pady=(0, 16))
+        for label, mins in [
+            ("今日", int(by_day.iloc[-1])),
+            ("直近7日", int(by_day.iloc[-7:].sum())),
+            (f"累計（{len(records)}回）", int(records["分"].sum())),
+        ]:
+            cell = tk.Frame(stats, bg=COLOR_BG)
+            cell.pack(side="left", expand=True, fill="x")
+            make_label(cell, label, size=10, color=COLOR_MUTED).pack(anchor="w")
+            make_label(cell, format_hours_mins(mins), size=18, bold=True).pack(anchor="w")
+
+        body = tk.Frame(screen, bg=COLOR_BG)
+        body.pack(fill="both", expand=True)
+
+        # よくやったこと（上位5件）
+        tasks = tk.Frame(body, bg=COLOR_BG)
+        tasks.pack(side="right", fill="y", padx=(24, 0))
+        make_label(tasks, "よくやったこと", size=10, color=COLOR_MUTED).grid(
+            row=0, column=0, columnspan=2, sticky="w", pady=(0, 6)
         )
+        for row, (task, mins) in enumerate(by_task.head(5).items(), start=1):
+            name = task if len(task) <= 10 else task[:9] + "…"
+            make_label(tasks, name, size=11).grid(row=row, column=0, sticky="w", pady=2)
+            make_label(tasks, format_hours_mins(int(mins)), size=11, color=COLOR_MUTED).grid(
+                row=row, column=1, sticky="e", padx=(16, 0), pady=2
+            )
 
-        today_mins = int(by_day.iloc[-1])
-        week_mins = int(by_day.iloc[-7:].sum())
-        total_mins = int(records["分"].sum())
-        tk.Label(
-            self.root,
-            text=(
-                f"今日: {format_hours_mins(today_mins)}　｜　"
-                f"直近7日: {format_hours_mins(week_mins)}　｜　"
-                f"累計: {format_hours_mins(total_mins)}（{len(records)}回）"
-            ),
-        ).pack()
+        # 日別の作業時間
+        chart = tk.Frame(body, bg=COLOR_BG)
+        chart.pack(side="left", fill="both", expand=True)
+        make_label(chart, f"直近{DASHBOARD_DAYS}日（分）", size=10, color=COLOR_MUTED).pack(anchor="w")
 
-        fig = Figure(figsize=(8, 4.4), dpi=100)
-        ax_pie, ax_bar = fig.subplots(1, 2, gridspec_kw={"width_ratios": [1, 1.3]})
+        # pyplot を使わず Figure を直接生成することで、Tkinter 埋め込み時のメモリリークを防ぐ
+        fig = Figure(figsize=(4.6, 3.4), dpi=100, facecolor=COLOR_BG)
+        ax = fig.add_subplot()
+        ax.set_facecolor(COLOR_BG)
+        ax.bar(range(len(by_day)), by_day.values, color=COLOR_ACCENT, width=0.6)
 
-        # 作業内容が多すぎると円グラフが読めないので、上位以外は「その他」にまとめる
-        top_n = 6
-        pie_data = by_task.head(top_n)
-        if len(by_task) > top_n:
-            pie_data = pd.concat([pie_data, pd.Series({"その他": by_task.iloc[top_n:].sum()})])
-        ax_pie.pie(
-            pie_data.values,
-            labels=pie_data.index,
-            # 小さい扇形はラベルが重なるので割合を表示しない
-            autopct=lambda pct: f"{pct:.1f}%" if pct >= 5 else "",
-            startangle=90,
-            counterclock=False,
-            colors=[f"C{i}" for i in range(len(pie_data))],
-            wedgeprops={"edgecolor": "white"},
-        )
-        ax_pie.set_title("作業内容別 時間割合")
-
-        ax_bar.bar([d.strftime("%m/%d") for d in by_day.index], by_day.values, color="#26a69a")
-        ax_bar.set_title(f"日別 作業時間（直近{DASHBOARD_DAYS}日）")
-        ax_bar.set_ylabel("分")
-        ax_bar.set_ylim(bottom=0, top=max(60, by_day.max() * 1.15))
+        # 日付は1日おきに表示する（今日の日付は必ず表示）
+        ticks = list(range(len(by_day) - 1, -1, -2))[::-1]
+        ax.set_xticks(ticks)
+        ax.set_xticklabels([f"{by_day.index[i].month}/{by_day.index[i].day}" for i in ticks])
+        ax.set_ylim(bottom=0, top=max(60, by_day.max() * 1.15))
+        ax.tick_params(colors=COLOR_MUTED, labelsize=8, length=0)
+        ax.grid(axis="y", color=COLOR_BORDER, linewidth=0.8)
+        ax.set_axisbelow(True)
+        ax.spines[["top", "right", "left"]].set_visible(False)
+        ax.spines["bottom"].set_color(COLOR_BORDER)
         if by_day.sum() == 0:
-            ax_bar.text(0.5, 0.5, "直近の記録はありません", ha="center", transform=ax_bar.transAxes)
-        ax_bar.tick_params(axis="x", labelrotation=60, labelsize=8)
-        ax_bar.spines[["top", "right"]].set_visible(False)
-
+            ax.text(
+                0.5, 0.5, "直近の記録はありません", ha="center", color=COLOR_MUTED, transform=ax.transAxes
+            )
         fig.tight_layout()
 
-        # ボタンを先に下端へ配置し、グラフが大きくても隠れないようにする
-        tk.Button(self.root, text="メニューに戻る", width=20, command=self.create_main_menu).pack(
-            side="bottom", pady=10
-        )
-
-        canvas = FigureCanvasTkAgg(fig, master=self.root)
+        canvas = FigureCanvasTkAgg(fig, master=chart)
         canvas.draw()
-        canvas.get_tk_widget().pack(pady=5, fill="both", expand=True)
+        canvas.get_tk_widget().configure(bg=COLOR_BG, highlightthickness=0)
+        canvas.get_tk_widget().pack(fill="both", expand=True)
 
 
 def main():

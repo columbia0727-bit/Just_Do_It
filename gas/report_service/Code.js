@@ -8,6 +8,8 @@
  *   users  : user_id, email, status(active / unsubscribed), created_at
  *   tokens : token_hash, user_id, created_at  … アプリ（端末）ごとの認証トークン（ハッシュのみ保存）
  *   logs   : user_id, datetime, task, minutes … LOG_RETENTION_DAYS より古い記録は自動削除
+ *
+ * @OnlyCurrentDoc  スプレッドシートの権限を、このスクリプトが紐づくシートだけに限定する
  */
 
 const SHEET_HEADERS = {
