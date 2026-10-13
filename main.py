@@ -62,6 +62,12 @@ rcParams["axes.unicode_minus"] = False
 # ==========================================
 # 保存先・設定まわり
 # ==========================================
+def get_icon_path():
+    """アプリアイコンの画像（PyInstaller でビルドした場合は同梱したファイル）"""
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    return base / "assets" / "icon.png"
+
+
 def get_data_dir():
     """作業ログと設定ファイルの保存先ディレクトリを返す
 
@@ -387,6 +393,12 @@ class JustDoItApp:
         self.root = root
         self.root.title(APP_NAME)
         self.root.configure(bg=COLOR_BG)
+        # ウィンドウ左上・タスクバーのアイコン（画像がなくてもアプリは動かす）
+        try:
+            self.icon = tk.PhotoImage(file=get_icon_path())
+            self.root.iconphoto(True, self.icon)
+        except tk.TclError:
+            pass
         self.after_id = None
         self.running = False
 

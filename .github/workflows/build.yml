@@ -37,7 +37,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements-dev.txt
-      - run: pyinstaller --noconfirm --windowed --name JustDoIt main.py
+      # アイコンは PNG を渡すと PyInstaller が Pillow で .ico / .icns に変換する
+      - run: pyinstaller --noconfirm --windowed --name JustDoIt --icon assets/icon.png --add-data "assets/icon.png:assets" main.py
 
       - name: Zip (Windows)
         if: runner.os == 'Windows'

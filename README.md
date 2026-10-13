@@ -138,6 +138,7 @@ just-do-it/
 ├── gas/code.js                # 自分のスプレッドシートに記録する上級者向け GAS
 ├── tests/test_main.py         # 記録・集計ロジックの単体テスト
 ├── sample/work_log_sample.csv # ログ形式のサンプル
+├── assets/icon.png            # アプリアイコン（ビルド時に .ico / .icns へ自動変換）
 ├── docs/                      # README 用スクリーンショット
 ├── requirements.txt
 ├── requirements-dev.txt       # ビルド用（PyInstaller）
