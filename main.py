@@ -25,7 +25,12 @@ FOCUS_LONG_SECONDS = 25 * 60
 BREAK_SECONDS = 10 * 60
 MAX_MANUAL_MINUTES = 24 * 60
 GAS_TIMEOUT_SECONDS = 10
-DASHBOARD_DAYS = 14
+# 振り返りの期間: キー → (切り替えボタンの表示, 日数, 見出し)
+DASHBOARD_PERIODS = {
+    "week": ("週", 7, "直近7日"),
+    "month": ("月", 30, "直近30日"),
+    "year": ("年", 365, "直近12か月"),
+}
 
 # 週次レポート配信サービス（開発者がデプロイした gas/report_service/ の WebアプリURL）
 # 環境変数 JUSTDOIT_REPORT_URL が設定されていればそちらを優先する
@@ -299,12 +304,50 @@ def summarize_by_task(records):
     return summary[summary > 0].sort_values(ascending=False)
 
 
-def summarize_by_day(records, days=DASHBOARD_DAYS, today=None):
+def summarize_by_day(records, days=7, today=None):
     """直近 days 日分の日別合計（記録がない日も0分として含める）"""
     today = (today or datetime.now()).date()
     index = pd.date_range(today - timedelta(days=days - 1), today).date
     daily = records.groupby(records["日時"].dt.date)["分"].sum()
     return daily.reindex(index, fill_value=0)
+
+
+def summarize_period(records, period, today=None):
+    """振り返りの期間（"week" / "month" / "year"）ごとの集計
+
+    week は直近7日・month は直近30日を日別（分）で、year は直近12か月を月別（時間）で返す。
+    """
+    today = (today or datetime.now()).date()
+    if period == "year":
+        months = pd.period_range(end=pd.Period(today, freq="M"), periods=12, freq="M")
+        start = months[0].start_time.date()
+    else:
+        start = today - timedelta(days=DASHBOARD_PERIODS[period][1] - 1)
+
+    dates = records["日時"].dt.date
+    in_range = records[(dates >= start) & (dates <= today)]
+    daily = summarize_by_day(in_range, days=(today - start).days + 1, today=datetime.combine(today, datetime.min.time()))
+
+    if period == "year":
+        monthly = in_range.groupby(in_range["日時"].dt.to_period("M"))["分"].sum().reindex(months, fill_value=0)
+        labels = [f"{p.month}月" for p in months]
+        values = [round(mins / 60, 1) for mins in monthly.values]
+        unit = "時間"
+    else:
+        labels = [f"{d.month}/{d.day}" for d in daily.index]
+        values = [int(mins) for mins in daily.values]
+        unit = "分"
+
+    return {
+        "title": DASHBOARD_PERIODS[period][2],
+        "labels": labels,
+        "values": values,
+        "unit": unit,
+        "total": int(in_range["分"].sum()),
+        "active_days": int((daily > 0).sum()),
+        "span_days": len(daily),
+        "by_task": summarize_by_task(in_range),
+    }
 
 
 def format_hours_mins(total_mins):
@@ -450,6 +493,27 @@ class JustDoItApp:
         header.pack(fill="x", pady=(0, 16))
         make_label(header, title, size=16, bold=True).pack(side="left")
         make_link(header, "戻る", self.create_main_menu).pack(side="right")
+        return header
+
+    def make_tabs(self, parent, options, selected, on_select):
+        """「週｜月｜年」のような切り替えボタン（選んでいるものだけ白く浮かせる）"""
+        tabs = tk.Frame(parent, bg=COLOR_SUBTLE, padx=2, pady=2)
+        for key, text in options:
+            active = key == selected
+            tab = tk.Label(
+                tabs,
+                text=text,
+                font=ui_font(10, bold=active),
+                fg=COLOR_TEXT if active else COLOR_MUTED,
+                bg="white" if active else COLOR_SUBTLE,
+                padx=self.px(14),
+                pady=self.px(2),
+                cursor="arrow" if active else "hand2",
+            )
+            tab.pack(side="left")
+            if not active:
+                tab.bind("<Button-1>", lambda event, k=key: on_select(k))
+        return tabs
 
     def create_main_menu(self):
         """起動時のメインメニュー（迷わないよう、目立つボタンは「5分だけやる」の1つだけ）"""
@@ -813,8 +877,10 @@ class JustDoItApp:
         email_entry.bind("<Return>", register)
 
     # ---------- 振り返り（ダッシュボード） ----------
-    def show_dashboard(self):
-        """ローカルのCSVを読み込んで、合計時間・日別グラフ・よくやったことを表示する"""
+    def show_dashboard(self, period=None):
+        """ローカルのCSVを読み込んで、期間（週・月・年）ごとの合計時間・グラフ・よくやったことを表示する"""
+        # 最後に選んだ期間を覚えておき、次に開いたときも同じ期間で表示する
+        self.dashboard_period = period or getattr(self, "dashboard_period", "week")
         csv_path = get_csv_path()
         no_record_message = "まだ記録がありません。\nまずは5分やってみましょう。"
 
@@ -828,68 +894,81 @@ class JustDoItApp:
             messagebox.showerror("エラー", f"データの読み込み中にエラーが発生しました:\n{e}", parent=self.root)
             return
 
-        by_task = summarize_by_task(records)
-        if by_task.empty:
+        if summarize_by_task(records).empty:
             messagebox.showinfo("振り返り", no_record_message, parent=self.root)
             return
-        by_day = summarize_by_day(records)
+        summary = summarize_period(records, self.dashboard_period)
 
         screen = self.make_screen("720x540")
-        self.make_header(screen, "振り返り")
+        header = self.make_header(screen, "振り返り")
+        self.make_tabs(
+            header,
+            [(key, label) for key, (label, _, _) in DASHBOARD_PERIODS.items()],
+            self.dashboard_period,
+            self.show_dashboard,
+        ).pack(side="left", padx=(self.px(20), 0))
 
-        # 合計時間（今日・直近7日・累計）
+        # 合計時間（この期間・記録した日・累計）
         stats = tk.Frame(screen, bg=COLOR_BG)
         stats.pack(fill="x", pady=(0, 16))
-        for label, mins in [
-            ("今日", int(by_day.iloc[-1])),
-            ("直近7日", int(by_day.iloc[-7:].sum())),
-            (f"累計（{len(records)}回）", int(records["分"].sum())),
+        for label, value in [
+            (summary["title"], format_hours_mins(summary["total"])),
+            ("記録した日", f"{summary['active_days']} / {summary['span_days']}日"),
+            (f"累計（{len(records)}回）", format_hours_mins(int(records["分"].sum()))),
         ]:
             cell = tk.Frame(stats, bg=COLOR_BG)
             cell.pack(side="left", expand=True, fill="x")
             make_label(cell, label, size=10, color=COLOR_MUTED).pack(anchor="w")
-            make_label(cell, format_hours_mins(mins), size=18, bold=True).pack(anchor="w")
+            make_label(cell, value, size=18, bold=True).pack(anchor="w")
 
         body = tk.Frame(screen, bg=COLOR_BG)
         body.pack(fill="both", expand=True)
 
-        # よくやったこと（上位5件）
+        # よくやったこと（この期間の上位5件）
         tasks = tk.Frame(body, bg=COLOR_BG)
         tasks.pack(side="right", fill="y", padx=(24, 0))
         make_label(tasks, "よくやったこと", size=10, color=COLOR_MUTED).grid(
             row=0, column=0, columnspan=2, sticky="w", pady=(0, 6)
         )
-        for row, (task, mins) in enumerate(by_task.head(5).items(), start=1):
+        if summary["by_task"].empty:
+            make_label(tasks, "この期間の記録はありません", size=11, color=COLOR_MUTED).grid(
+                row=1, column=0, columnspan=2, sticky="w"
+            )
+        for row, (task, mins) in enumerate(summary["by_task"].head(5).items(), start=1):
             name = task if len(task) <= 10 else task[:9] + "…"
             make_label(tasks, name, size=11).grid(row=row, column=0, sticky="w", pady=2)
             make_label(tasks, format_hours_mins(int(mins)), size=11, color=COLOR_MUTED).grid(
                 row=row, column=1, sticky="e", padx=(16, 0), pady=2
             )
 
-        # 日別の作業時間
+        # 期間内の作業時間（週・月は日別、年は月別）
         chart = tk.Frame(body, bg=COLOR_BG)
         chart.pack(side="left", fill="both", expand=True)
-        make_label(chart, f"直近{DASHBOARD_DAYS}日（分）", size=10, color=COLOR_MUTED).pack(anchor="w")
+        per = "月ごと" if self.dashboard_period == "year" else "日ごと"
+        make_label(chart, f"{per}の作業時間（{summary['unit']}）", size=10, color=COLOR_MUTED).pack(anchor="w")
 
         # pyplot を使わず Figure を直接生成することで、Tkinter 埋め込み時のメモリリークを防ぐ
         fig = Figure(figsize=(4.6, 3.4), dpi=100 * self.scale, facecolor=COLOR_BG)
         ax = fig.add_subplot()
         ax.set_facecolor(COLOR_BG)
-        ax.bar(range(len(by_day)), by_day.values, color=COLOR_ACCENT, width=0.6)
+        values = summary["values"]
+        ax.bar(range(len(values)), values, color=COLOR_ACCENT, width=0.6)
 
-        # 日付は1日おきに表示する（今日の日付は必ず表示）
-        ticks = list(range(len(by_day) - 1, -1, -2))[::-1]
+        # 日付が詰まらないよう間引く（最新の日・月は必ず表示）
+        step = {"week": 1, "month": 5, "year": 1}[self.dashboard_period]
+        ticks = list(range(len(values) - 1, -1, -step))[::-1]
         ax.set_xticks(ticks)
-        ax.set_xticklabels([f"{by_day.index[i].month}/{by_day.index[i].day}" for i in ticks])
-        ax.set_ylim(bottom=0, top=max(60, by_day.max() * 1.15))
+        ax.set_xticklabels([summary["labels"][i] for i in ticks])
+        min_top = 1 if summary["unit"] == "時間" else 60
+        ax.set_ylim(bottom=0, top=max(min_top, max(values) * 1.15))
         ax.tick_params(colors=COLOR_MUTED, labelsize=8, length=0)
         ax.grid(axis="y", color=COLOR_BORDER, linewidth=0.8)
         ax.set_axisbelow(True)
         ax.spines[["top", "right", "left"]].set_visible(False)
         ax.spines["bottom"].set_color(COLOR_BORDER)
-        if by_day.sum() == 0:
+        if summary["total"] == 0:
             ax.text(
-                0.5, 0.5, "直近の記録はありません", ha="center", color=COLOR_MUTED, transform=ax.transAxes
+                0.5, 0.5, "この期間の記録はありません", ha="center", color=COLOR_MUTED, transform=ax.transAxes
             )
         fig.tight_layout()
 

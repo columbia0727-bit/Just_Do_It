@@ -48,6 +48,35 @@ class RecordsTest(unittest.TestCase):
         )
         self.assertEqual(list(by_day.values), [25, 0, 10])
 
+    def test_summarize_period_week_and_month(self):
+        main.append_record_to_csv(self.csv_path, "2026-08-01 09:00:00", "古い", 30)
+        main.append_record_to_csv(self.csv_path, "2026-08-14 09:00:00", "学習", 20)
+        main.append_record_to_csv(self.csv_path, "2026-08-20 09:00:00", "制作", 25)
+        main.append_record_to_csv(self.csv_path, "2026-08-20 10:00:00", "制作", 5)
+        records = main.load_records(self.csv_path)
+        today = datetime(2026, 8, 20)
+
+        week = main.summarize_period(records, "week", today=today)
+        self.assertEqual(week["labels"][0], "8/14")
+        self.assertEqual(week["values"], [20, 0, 0, 0, 0, 0, 30])
+        self.assertEqual((week["total"], week["active_days"], week["span_days"]), (50, 2, 7))
+        self.assertEqual(week["by_task"].to_dict(), {"制作": 30, "学習": 20})
+
+        month = main.summarize_period(records, "month", today=today)
+        self.assertEqual((month["total"], month["span_days"]), (80, 30))
+
+    def test_summarize_period_year_is_monthly_in_hours(self):
+        main.append_record_to_csv(self.csv_path, "2025-08-31 09:00:00", "範囲外", 600)
+        main.append_record_to_csv(self.csv_path, "2025-09-01 09:00:00", "制作", 90)
+        main.append_record_to_csv(self.csv_path, "2026-08-20 09:00:00", "制作", 30)
+
+        year = main.summarize_period(main.load_records(self.csv_path), "year", today=datetime(2026, 8, 20))
+        self.assertEqual(year["labels"][0], "9月")
+        self.assertEqual(year["labels"][-1], "8月")
+        self.assertEqual(year["values"][0], 1.5)
+        self.assertEqual(year["values"][-1], 0.5)
+        self.assertEqual((year["unit"], year["total"]), ("時間", 120))
+
     def test_rows_with_invalid_datetime_are_skipped(self):
         self.csv_path.parent.mkdir(parents=True)
         self.csv_path.write_text(
