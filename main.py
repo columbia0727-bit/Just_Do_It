@@ -27,6 +27,12 @@ MAX_MANUAL_MINUTES = 24 * 60
 GAS_TIMEOUT_SECONDS = 10
 DASHBOARD_DAYS = 14
 
+# 週次レポート配信サービス（開発者がデプロイした gas/report_service/ の WebアプリURL）
+# 環境変数 JUSTDOIT_REPORT_URL が設定されていればそちらを優先する
+REPORT_SERVICE_URL = ""
+# 登録直後のレポートが空にならないよう、登録時に送る過去の記録の日数
+REPORT_BACKFILL_DAYS = 14
+
 MENU_GEOMETRY = "320x340"
 
 # OSに合わせて日本語フォントを切り替える
@@ -96,6 +102,18 @@ def is_valid_gas_url(url):
     return url.startswith("https://script.google.com/")
 
 
+def get_report_service_url():
+    return os.environ.get("JUSTDOIT_REPORT_URL") or REPORT_SERVICE_URL
+
+
+def get_report_queue_path():
+    return get_data_dir() / "log" / "report_queue.json"
+
+
+def is_report_registered():
+    return bool(get_report_service_url() and load_config().get("report_token"))
+
+
 # ==========================================
 # 記録の保存・送信
 # ==========================================
@@ -106,24 +124,142 @@ def append_record_to_csv(csv_path, now_str, task, duration_mins):
         csv.writer(f).writerow([now_str, task, f"{duration_mins}分"])
 
 
+def post_json(url, payload):
+    """JSON を POST し、レスポンスの JSON を dict で返す"""
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=GAS_TIMEOUT_SECONDS) as res:
+        return json.loads(res.read().decode("utf-8"))
+
+
 def send_to_gas(gas_url, payload):
     """GASにPOSTリクエストを送信してスプレッドシートに記録する（別スレッドから呼ぶ）"""
     try:
-        req = urllib.request.Request(
-            gas_url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=GAS_TIMEOUT_SECONDS) as res:
-            result = json.loads(res.read().decode("utf-8"))
-
+        result = post_json(gas_url, payload)
         if result.get("status") == "success":
             print("➔ スプレッドシートに追加しました")
         else:
             print(f"⚠️ スプレッドシート追加エラー: {result.get('message', '不明')}")
     except Exception as e:
         print(f"❌ スプレッドシート通信エラー: {e}")
+
+
+# ==========================================
+# 週次レポート配信サービスとの通信
+# ==========================================
+class ReportServiceError(Exception):
+    """配信サービスのエラー。code は "network"（通信失敗）や "unauthorized"（トークン無効）など"""
+
+    def __init__(self, message, code="error"):
+        super().__init__(message)
+        self.code = code
+
+
+def call_report_service(url, payload):
+    """配信サービスを呼び出して結果の dict を返す。失敗時は ReportServiceError を送出"""
+    try:
+        result = post_json(url, payload)
+    except (OSError, ValueError) as e:
+        raise ReportServiceError(f"サーバーに接続できませんでした: {e}", "network") from e
+    if result.get("status") != "success":
+        raise ReportServiceError(result.get("message", "不明なエラー"), result.get("code", "error"))
+    return result
+
+
+# 送信待ちキューは UI スレッド（追加）と送信スレッド（削除）の両方から触るためロックで守る
+_report_queue_lock = threading.Lock()
+# 送信スレッドが同時に複数動かないようにする
+_report_sync_lock = threading.Lock()
+
+
+def load_report_queue(queue_path):
+    try:
+        with open(queue_path, encoding="utf-8") as f:
+            items = json.load(f)
+        return items if isinstance(items, list) else []
+    except (OSError, json.JSONDecodeError):
+        return []
+
+
+def save_report_queue(queue_path, items):
+    # 書き込み途中でアプリが終了してもファイルが壊れないよう、一時ファイルから置き換える
+    queue_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = queue_path.with_suffix(".tmp")
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(items, f, ensure_ascii=False)
+    os.replace(tmp_path, queue_path)
+
+
+def enqueue_report_logs(queue_path, logs):
+    with _report_queue_lock:
+        save_report_queue(queue_path, load_report_queue(queue_path) + list(logs))
+
+
+def clear_report_registration():
+    """保存済みのトークンと送信待ちの記録を削除する"""
+    config = load_config()
+    config.pop("report_token", None)
+    config.pop("report_email", None)
+    save_config(config)
+    with _report_queue_lock:
+        save_report_queue(get_report_queue_path(), [])
+
+
+def sync_report_queue(url, queue_path):
+    """送信待ちの記録を配信サービスへ順に送る（別スレッドから呼ぶ）
+
+    通信できなかった分はキューに残して次回（次の記録時・次回起動時）に再送する。
+    トークンが無効になっていた場合（メールのリンクから配信停止された等）は登録を解除する。
+    """
+    if not _report_sync_lock.acquire(blocking=False):
+        return
+    try:
+        while True:
+            token = load_config().get("report_token")
+            with _report_queue_lock:
+                pending = load_report_queue(queue_path)
+            if not token or not pending:
+                return
+
+            processed = 0
+            stop = False
+            for log in pending:
+                try:
+                    call_report_service(url, {"action": "log", "token": token, **log})
+                except ReportServiceError as e:
+                    if e.code == "network" or e.code == "busy":
+                        print(f"⚠️ 週次レポート用の記録を送信できませんでした（次回再送）: {e}")
+                        stop = True
+                        break
+                    if e.code == "unauthorized":
+                        print("⚠️ 週次レポートの登録が解除されていました")
+                        clear_report_registration()
+                        return
+                    # 形式エラーなど再送しても成功しない記録は捨てる
+                    print(f"⚠️ 週次レポート用の記録を送信できませんでした（破棄）: {e}")
+                processed += 1
+
+            # 送信中に追加された記録はキューの末尾にあるので、先頭から送信済みの分だけ取り除く
+            with _report_queue_lock:
+                save_report_queue(queue_path, load_report_queue(queue_path)[processed:])
+            if stop or processed == 0:
+                return
+    finally:
+        _report_sync_lock.release()
+
+
+def build_backfill_logs(records, days=REPORT_BACKFILL_DAYS, now=None):
+    """作業ログの DataFrame から、直近 days 日分を配信サービスへ送る形式に変換する"""
+    start = (now or datetime.now()) - timedelta(days=days)
+    recent = records[(records["日時"] >= start) & (records["分"] > 0)]
+    return [
+        {"datetime": row.日時.strftime("%Y-%m-%d %H:%M:%S"), "task": row.作業内容, "minutes": int(row.分)}
+        for row in recent.itertuples(index=False)
+    ]
 
 
 # ==========================================
@@ -194,6 +330,8 @@ class JustDoItApp:
         self.root.geometry(f"{window_width}x{window_height}+{x}+{y}")
 
         self.create_main_menu()
+        # 前回送れなかった記録があれば再送する
+        self.start_report_sync()
 
     def clear_window(self):
         """画面上のウィジェットをすべてクリアし、動いているタイマーも止める"""
@@ -259,7 +397,12 @@ class JustDoItApp:
             command=self.show_settings,
         ).pack(pady=5)
 
-        sync_text = "☁️ スプレッドシート連携: ON" if get_gas_url() else "💾 ローカル保存のみ"
+        statuses = []
+        if is_report_registered():
+            statuses.append("📧 週次レポート: ON")
+        if get_gas_url():
+            statuses.append("☁️ スプレッドシート連携: ON")
+        sync_text = "　".join(statuses) or "💾 ローカル保存のみ"
         tk.Label(self.root, text=sync_text, fg="gray").pack(pady=5)
 
     # ---------- 集中タイマー ----------
@@ -497,26 +640,148 @@ class JustDoItApp:
             payload = {"datetime": now_str, "task": task, "duration": f"{duration_mins}分"}
             threading.Thread(target=send_to_gas, args=(gas_url, payload), daemon=True).start()
 
+        # 週次レポートに登録済みなら、送信待ちキューに積んでから別スレッドで送る
+        if is_report_registered():
+            log = {"datetime": now_str, "task": task, "minutes": duration_mins}
+            try:
+                enqueue_report_logs(get_report_queue_path(), [log])
+            except OSError as e:
+                print(f"⚠️ 週次レポート用の記録を保存できませんでした: {e}")
+            self.start_report_sync()
+
+    def start_report_sync(self):
+        url = get_report_service_url()
+        if url and load_config().get("report_token"):
+            threading.Thread(
+                target=sync_report_queue, args=(url, get_report_queue_path()), daemon=True
+            ).start()
+
+    # ---------- 週次レポートの登録・解除 ----------
+    def call_report_service_busy(self, payload):
+        """配信サービスを呼び出す（数秒かかるので、その間はカーソルを待機表示にする）"""
+        self.root.config(cursor="watch")
+        self.root.update_idletasks()
+        try:
+            return call_report_service(get_report_service_url(), payload)
+        finally:
+            self.root.config(cursor="")
+
+    def register_report(self, email):
+        email = email.strip()
+        if "@" not in email:
+            messagebox.showwarning(
+                "入力エラー", "メールアドレスを入力してください。", parent=self.root
+            )
+            return
+
+        try:
+            self.call_report_service_busy({"action": "register", "email": email})
+        except ReportServiceError as e:
+            messagebox.showerror("送信エラー", str(e), parent=self.root)
+            return
+
+        # コードの打ち間違いは、その場で入力し直せるようにする
+        while True:
+            code = simpledialog.askstring(
+                "確認コード",
+                f"{email} に届いた6桁の確認コードを入力してください。\n"
+                "（迷惑メールフォルダに届く場合があります）",
+                parent=self.root,
+            )
+            if code is None:
+                return
+            try:
+                result = self.call_report_service_busy(
+                    {"action": "verify", "email": email, "code": code.strip()}
+                )
+                break
+            except ReportServiceError as e:
+                messagebox.showerror("確認エラー", str(e), parent=self.root)
+                if e.code != "invalid_code":
+                    return
+
+        config = load_config()
+        config["report_email"] = email
+        config["report_token"] = result["token"]
+        try:
+            save_config(config)
+        except OSError as e:
+            messagebox.showerror("保存エラー", f"設定を保存できませんでした:\n{e}", parent=self.root)
+            return
+
+        # 登録前の記録も送っておき、最初のレポートから中身が入るようにする
+        csv_path = get_csv_path()
+        if csv_path.exists():
+            try:
+                enqueue_report_logs(get_report_queue_path(), build_backfill_logs(load_records(csv_path)))
+            except (OSError, ValueError) as e:
+                print(f"⚠️ 過去の記録を送信できませんでした: {e}")
+        self.start_report_sync()
+
+        messagebox.showinfo(
+            "登録完了",
+            "登録が完了しました！\n毎週月曜 9時ごろ、先週の振り返りレポートがメールで届きます。",
+            parent=self.root,
+        )
+        self.show_settings()
+
+    def unregister_report(self):
+        if not messagebox.askyesno(
+            "配信停止",
+            "週次レポートの配信を停止しますか？\nサーバーに保存された作業記録も削除されます（アプリ内の記録は残ります）。",
+            parent=self.root,
+        ):
+            return
+
+        try:
+            self.call_report_service_busy(
+                {"action": "unregister", "token": load_config().get("report_token")}
+            )
+        except ReportServiceError as e:
+            # すでにサーバー側で解除済み（unauthorized）なら、そのままアプリ側も解除する
+            if e.code != "unauthorized":
+                messagebox.showerror(
+                    "停止エラー",
+                    f"{e}\n時間をおいて再度お試しいただくか、レポートメール内のリンクから停止してください。",
+                    parent=self.root,
+                )
+                return
+
+        try:
+            clear_report_registration()
+        except OSError as e:
+            messagebox.showerror("保存エラー", f"設定を保存できませんでした:\n{e}", parent=self.root)
+            return
+        messagebox.showinfo("配信停止", "週次レポートの配信を停止しました。", parent=self.root)
+        self.show_settings()
+
     # ---------- 設定 ----------
     def show_settings(self):
-        """GAS の WebアプリURL を設定する画面"""
+        """週次レポートの登録と、GAS の WebアプリURL を設定する画面"""
         self.clear_window()
-        self.root.geometry("420x300")
+        self.root.geometry("460x520")
 
-        tk.Label(self.root, text="⚙️ 設定", font=("", 16, "bold")).pack(pady=15)
+        tk.Label(self.root, text="⚙️ 設定", font=("", 16, "bold")).pack(pady=10)
+
+        report_frame = tk.LabelFrame(
+            self.root, text="📧 週次レポート（毎週月曜 9時ごろメールでお届け）", padx=10, pady=8
+        )
+        report_frame.pack(fill="x", padx=12, pady=5)
+        self.build_report_settings(report_frame)
+
+        gas_frame = tk.LabelFrame(
+            self.root, text="☁️ 自分のスプレッドシートに記録（上級者向け・任意）", padx=10, pady=8
+        )
+        gas_frame.pack(fill="x", padx=12, pady=5)
+
         tk.Label(
-            self.root,
-            text="Googleスプレッドシート連携用の GAS WebアプリURL\n（空欄ならローカル保存のみ）",
-        ).pack(pady=(5, 0))
+            gas_frame,
+            text="自分でデプロイした GAS の WebアプリURL（空欄なら使わない）",
+        ).pack()
 
-        url_entry = tk.Entry(self.root, width=50)
+        url_entry = tk.Entry(gas_frame, width=50)
         url_entry.insert(0, load_config().get("gas_url", ""))
         url_entry.pack(pady=5)
-        url_entry.focus_set()
-
-        tk.Label(self.root, text=f"保存先: {get_data_dir()}", fg="gray", wraplength=400).pack(
-            pady=5
-        )
 
         def save_and_back(event=None):
             url = url_entry.get().strip()
@@ -537,11 +802,51 @@ class JustDoItApp:
             messagebox.showinfo("保存完了", "設定を保存しました。", parent=self.root)
             self.create_main_menu()
 
-        tk.Button(self.root, text="保存する", command=save_and_back, width=25).pack(pady=10)
+        tk.Button(gas_frame, text="URLを保存する", command=save_and_back, width=20).pack(pady=5)
+        url_entry.bind("<Return>", save_and_back)
+
+        tk.Label(self.root, text=f"保存先: {get_data_dir()}", fg="gray", wraplength=430).pack(
+            pady=5
+        )
         tk.Button(
             self.root, text="メニューに戻る", command=self.create_main_menu, width=25
         ).pack(pady=5)
-        url_entry.bind("<Return>", save_and_back)
+
+    def build_report_settings(self, frame):
+        """設定画面の週次レポート欄（登録状態に応じて表示を切り替える）"""
+        config = load_config()
+
+        if not get_report_service_url():
+            tk.Label(
+                frame,
+                text="このビルドでは配信サービスが設定されていません。\n（開発者向け: README の「週次レポート配信サービス」を参照）",
+                fg="gray",
+            ).pack()
+            return
+
+        if config.get("report_token"):
+            tk.Label(frame, text=f"✅ 登録中: {config.get('report_email', '')}").pack()
+            tk.Label(
+                frame, text="記録するだけで、先週の振り返りが毎週自動で届きます。", fg="gray"
+            ).pack()
+            tk.Button(
+                frame, text="配信を停止する", command=self.unregister_report, width=20
+            ).pack(pady=5)
+            return
+
+        tk.Label(
+            frame,
+            text="メールアドレスを登録するだけで、毎週の振り返りが自動で届きます。",
+        ).pack()
+        email_entry = tk.Entry(frame, width=40)
+        email_entry.pack(pady=5)
+        email_entry.focus_set()
+
+        def register(event=None):
+            self.register_report(email_entry.get())
+
+        tk.Button(frame, text="確認コードを送る", command=register, width=20).pack(pady=5)
+        email_entry.bind("<Return>", register)
 
     # ---------- ダッシュボード ----------
     def show_dashboard(self):

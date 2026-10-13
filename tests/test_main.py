@@ -3,6 +3,8 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest import mock
+import urllib.error
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -58,6 +60,86 @@ class GasUrlTest(unittest.TestCase):
     def test_only_apps_script_urls_are_valid(self):
         self.assertTrue(main.is_valid_gas_url("https://script.google.com/macros/s/xxx/exec"))
         self.assertFalse(main.is_valid_gas_url("https://example.com/"))
+
+
+class ReportServiceTest(unittest.TestCase):
+    URL = "https://script.google.com/macros/s/test/exec"
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        data_dir = Path(self.tmp.name)
+        patcher = mock.patch.object(main, "get_data_dir", return_value=data_dir)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.queue_path = main.get_report_queue_path()
+        main.save_config({"report_email": "me@example.com", "report_token": "tok"})
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def log(self, task):
+        return {"datetime": "2026-10-12 09:00:00", "task": task, "minutes": 25}
+
+    def test_call_report_service_raises_with_server_code(self):
+        with mock.patch.object(
+            main, "post_json", return_value={"status": "error", "code": "unauthorized", "message": "NG"}
+        ):
+            with self.assertRaises(main.ReportServiceError) as ctx:
+                main.call_report_service(self.URL, {})
+        self.assertEqual(ctx.exception.code, "unauthorized")
+
+    def test_call_report_service_marks_network_errors(self):
+        with mock.patch.object(main, "post_json", side_effect=urllib.error.URLError("offline")):
+            with self.assertRaises(main.ReportServiceError) as ctx:
+                main.call_report_service(self.URL, {})
+        self.assertEqual(ctx.exception.code, "network")
+
+    def test_sync_sends_all_logs_with_token(self):
+        main.enqueue_report_logs(self.queue_path, [self.log("制作"), self.log("学習")])
+        with mock.patch.object(main, "post_json", return_value={"status": "success"}) as post:
+            main.sync_report_queue(self.URL, self.queue_path)
+
+        sent = [call.args[1] for call in post.call_args_list]
+        self.assertEqual([p["task"] for p in sent], ["制作", "学習"])
+        self.assertTrue(all(p["action"] == "log" and p["token"] == "tok" for p in sent))
+        self.assertEqual(main.load_report_queue(self.queue_path), [])
+
+    def test_sync_keeps_unsent_logs_on_network_error(self):
+        main.enqueue_report_logs(self.queue_path, [self.log("制作"), self.log("学習")])
+        responses = [{"status": "success"}, urllib.error.URLError("offline")]
+        with mock.patch.object(main, "post_json", side_effect=responses):
+            main.sync_report_queue(self.URL, self.queue_path)
+
+        self.assertEqual(main.load_report_queue(self.queue_path), [self.log("学習")])
+
+    def test_sync_drops_logs_rejected_by_server(self):
+        main.enqueue_report_logs(self.queue_path, [self.log("制作")])
+        rejected = {"status": "error", "code": "invalid", "message": "NG"}
+        with mock.patch.object(main, "post_json", return_value=rejected):
+            main.sync_report_queue(self.URL, self.queue_path)
+
+        self.assertEqual(main.load_report_queue(self.queue_path), [])
+
+    def test_sync_clears_registration_when_token_is_revoked(self):
+        main.enqueue_report_logs(self.queue_path, [self.log("制作")])
+        revoked = {"status": "error", "code": "unauthorized", "message": "NG"}
+        with mock.patch.object(main, "post_json", return_value=revoked):
+            main.sync_report_queue(self.URL, self.queue_path)
+
+        self.assertNotIn("report_token", main.load_config())
+        self.assertEqual(main.load_report_queue(self.queue_path), [])
+
+    def test_backfill_includes_only_recent_records(self):
+        csv_path = main.get_csv_path()
+        main.append_record_to_csv(csv_path, "2026-09-01 09:00:00", "古い", 25)
+        main.append_record_to_csv(csv_path, "2026-10-10 09:00:00", "制作", 25)
+
+        logs = main.build_backfill_logs(
+            main.load_records(csv_path), days=14, now=datetime(2026, 10, 13)
+        )
+        self.assertEqual(
+            logs, [{"datetime": "2026-10-10 09:00:00", "task": "制作", "minutes": 25}]
+        )
 
 
 if __name__ == "__main__":
