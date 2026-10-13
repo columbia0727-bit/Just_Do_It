@@ -274,7 +274,7 @@ function buildReportBody_(week, current, previous, unsubscribeUrl) {
 
 function cheerMessage_(current, previous) {
   if (current.totalMinutes === 0) {
-    return "先週は記録がありませんでした。今週はまず「🔥 5分やる」から始めてみましょう！";
+    return "先週は記録がありませんでした。今週はまず「5分だけやる」から始めてみましょう。";
   }
   if (current.totalMinutes > previous.totalMinutes) {
     return "前の週より積み上がっています！この調子で今週も続けましょう。";
@@ -515,13 +515,17 @@ function formatDay_(date) {
   return Utilities.formatDate(date, Session.getScriptTimeZone(), "M/d");
 }
 
+// 「1時間 20分」の形にする（1時間未満は「41分」、ちょうどの時間は「2時間」）
 function formatHoursMins_(totalMins) {
-  return Math.floor(totalMins / 60) + "時間 " + (totalMins % 60) + "分";
+  const hours = Math.floor(totalMins / 60);
+  const mins = totalMins % 60;
+  if (hours === 0) return mins + "分";
+  return mins === 0 ? hours + "時間" : hours + "時間 " + mins + "分";
 }
 
 function formatDiff_(diffMins) {
-  if (diffMins > 0) return "+" + diffMins + "分";
-  if (diffMins < 0) return "-" + Math.abs(diffMins) + "分";
+  if (diffMins > 0) return "+" + formatHoursMins_(diffMins);
+  if (diffMins < 0) return "-" + formatHoursMins_(Math.abs(diffMins));
   return "±0分";
 }
 

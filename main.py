@@ -113,15 +113,6 @@ def save_config(config):
         json.dump(config, f, ensure_ascii=False, indent=2)
 
 
-def get_gas_url():
-    """GAS の WebアプリURL（環境変数 JUSTDOIT_GAS_URL が設定ファイルより優先）"""
-    return os.environ.get("JUSTDOIT_GAS_URL") or load_config().get("gas_url", "")
-
-
-def is_valid_gas_url(url):
-    return url.startswith("https://script.google.com/")
-
-
 def get_report_service_url():
     return os.environ.get("JUSTDOIT_REPORT_URL") or REPORT_SERVICE_URL
 
@@ -154,18 +145,6 @@ def post_json(url, payload):
     )
     with urllib.request.urlopen(req, timeout=GAS_TIMEOUT_SECONDS) as res:
         return json.loads(res.read().decode("utf-8"))
-
-
-def send_to_gas(gas_url, payload):
-    """GASにPOSTリクエストを送信してスプレッドシートに記録する（別スレッドから呼ぶ）"""
-    try:
-        result = post_json(gas_url, payload)
-        if result.get("status") == "success":
-            print("➔ スプレッドシートに追加しました")
-        else:
-            print(f"⚠️ スプレッドシート追加エラー: {result.get('message', '不明')}")
-    except Exception as e:
-        print(f"❌ スプレッドシート通信エラー: {e}")
 
 
 # ==========================================
@@ -329,7 +308,11 @@ def summarize_by_day(records, days=DASHBOARD_DAYS, today=None):
 
 
 def format_hours_mins(total_mins):
-    return f"{total_mins // 60}時間 {total_mins % 60}分"
+    """「1時間 20分」の形にする（1時間未満は「41分」、ちょうどの時間は「2時間」）"""
+    hours, mins = divmod(int(total_mins), 60)
+    if hours == 0:
+        return f"{mins}分"
+    return f"{hours}時間" if mins == 0 else f"{hours}時間 {mins}分"
 
 
 # ==========================================
@@ -401,6 +384,9 @@ class JustDoItApp:
             pass
         self.after_id = None
         self.running = False
+        # Windows の表示倍率（125%・150% など）。画面サイズや余白をこの倍率で広げる
+        # （Mac は OS が拡大するので 1 のまま）
+        self.scale = self.root.winfo_fpixels("1i") / 96 if platform.system() == "Windows" else 1.0
 
         self.create_main_menu()
         # 前回送れなかった記録があれば再送する
@@ -427,11 +413,16 @@ class JustDoItApp:
             self.root.lift()
             self.root.focus_force()
 
+    def px(self, value):
+        """100% 表示のときのピクセル数を、今の表示倍率に合わせて変換する"""
+        return round(value * self.scale)
+
     def resize_window(self, width, height):
         """ウィンドウの中心を保ったままサイズを変える（大きい画面が右下に寄らないように）
 
         起動直後はPC画面の中央に置く。はみ出す場合はPC画面内に収まるよう位置を寄せる。
         """
+        width, height = self.px(width), self.px(height)
         screen_width = self.root.winfo_screenwidth()
         screen_height = self.root.winfo_screenheight()
         if self.root.winfo_ismapped():
@@ -449,7 +440,7 @@ class JustDoItApp:
         """前の画面を消して、余白付きの新しい画面の土台を返す"""
         self.clear_window()
         self.resize_window(*map(int, geometry.split("x")))
-        screen = tk.Frame(self.root, bg=COLOR_BG, padx=24, pady=20)
+        screen = tk.Frame(self.root, bg=COLOR_BG, padx=self.px(24), pady=self.px(20))
         screen.pack(fill="both", expand=True)
         return screen
 
@@ -644,7 +635,7 @@ class JustDoItApp:
 
     # ---------- 保存 ----------
     def save_record(self, task, duration_mins):
-        """ローカルCSVへの保存 ＆ Googleスプレッドシート（GAS）への自動送信"""
+        """ローカルCSVへの保存 ＆ 週次レポート用の送信"""
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         try:
@@ -655,12 +646,6 @@ class JustDoItApp:
             )
             return
         print(f"【ローカル保存完了】{now_str} - {task} ({duration_mins}分)")
-
-        # GAS連携が設定されている場合のみ、UIを止めないよう別スレッドで送信
-        gas_url = get_gas_url()
-        if gas_url:
-            payload = {"datetime": now_str, "task": task, "duration": f"{duration_mins}分"}
-            threading.Thread(target=send_to_gas, args=(gas_url, payload), daemon=True).start()
 
         # 週次レポートに登録済みなら、送信待ちキューに積んでから別スレッドで送る
         if is_report_registered():
@@ -778,8 +763,8 @@ class JustDoItApp:
 
     # ---------- 設定 ----------
     def show_settings(self):
-        """週次レポートの登録と、GAS の WebアプリURL を設定する画面"""
-        screen = self.make_screen("460x560")
+        """週次レポートの登録画面"""
+        screen = self.make_screen("460x360")
         self.make_header(screen, "設定")
 
         make_label(screen, "週次レポート", bold=True).pack(anchor="w")
@@ -788,50 +773,12 @@ class JustDoItApp:
         ).pack(anchor="w", pady=(2, 8))
         self.build_report_settings(screen)
 
-        tk.Frame(screen, height=1, bg=COLOR_BORDER).pack(fill="x", pady=16)
-
-        make_label(screen, "自分のスプレッドシートに記録", bold=True).pack(anchor="w")
-        make_label(
-            screen,
-            "上級者向け・任意。自分でデプロイした GAS の WebアプリURL（空欄なら使わない）",
-            size=10,
-            color=COLOR_MUTED,
-            wraplength=410,
-            justify="left",
-        ).pack(anchor="w", pady=(2, 8))
-
-        url_entry = make_entry(screen)
-        url_entry.insert(0, load_config().get("gas_url", ""))
-        url_entry.pack(fill="x", ipady=4)
-        status_label = make_label(screen, size=10, wraplength=410, justify="left")
-
-        def save_url(event=None):
-            url = url_entry.get().strip()
-            if url and not is_valid_gas_url(url):
-                status_label.config(
-                    text="https://script.google.com/ から始まる GAS の WebアプリURL を入力してください",
-                    fg=COLOR_ERROR,
-                )
-                return
-            config = load_config()
-            config["gas_url"] = url
-            try:
-                save_config(config)
-            except OSError as e:
-                messagebox.showerror("保存エラー", f"設定を保存できませんでした:\n{e}", parent=self.root)
-                return
-            status_label.config(text="保存しました", fg=COLOR_MUTED)
-
-        make_button(screen, "URLを保存", save_url).pack(fill="x", pady=(8, 0))
-        status_label.pack(anchor="w", pady=(4, 0))
-        url_entry.bind("<Return>", save_url)
-
         make_label(
             screen,
             f"保存先: {get_data_dir()}",
             size=9,
             color=COLOR_MUTED,
-            wraplength=410,
+            wraplength=self.px(410),
             justify="left",
         ).pack(side="bottom", anchor="w")
 
@@ -845,7 +792,7 @@ class JustDoItApp:
                 "このビルドでは配信サービスが設定されていません。\n（開発者向け: README の「週次レポート配信サービス」を参照）",
                 size=10,
                 color=COLOR_MUTED,
-                wraplength=410,
+                wraplength=self.px(410),
                 justify="left",
             ).pack(anchor="w")
             return
@@ -925,7 +872,7 @@ class JustDoItApp:
         make_label(chart, f"直近{DASHBOARD_DAYS}日（分）", size=10, color=COLOR_MUTED).pack(anchor="w")
 
         # pyplot を使わず Figure を直接生成することで、Tkinter 埋め込み時のメモリリークを防ぐ
-        fig = Figure(figsize=(4.6, 3.4), dpi=100, facecolor=COLOR_BG)
+        fig = Figure(figsize=(4.6, 3.4), dpi=100 * self.scale, facecolor=COLOR_BG)
         ax = fig.add_subplot()
         ax.set_facecolor(COLOR_BG)
         ax.bar(range(len(by_day)), by_day.values, color=COLOR_ACCENT, width=0.6)
@@ -958,6 +905,11 @@ def main():
         import ctypes
 
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("JustDoIt.App")
+        # 表示倍率が 100% 以外の PC で文字がぼやけないよう、Windows による拡大をやめて自前で拡大する
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(1)
+        except (AttributeError, OSError):
+            ctypes.windll.user32.SetProcessDPIAware()
     root = tk.Tk()
     JustDoItApp(root)
     root.mainloop()

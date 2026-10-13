@@ -56,10 +56,12 @@ class RecordsTest(unittest.TestCase):
         self.assertEqual(len(main.load_records(self.csv_path)), 1)
 
 
-class GasUrlTest(unittest.TestCase):
-    def test_only_apps_script_urls_are_valid(self):
-        self.assertTrue(main.is_valid_gas_url("https://script.google.com/macros/s/xxx/exec"))
-        self.assertFalse(main.is_valid_gas_url("https://example.com/"))
+class FormatHoursMinsTest(unittest.TestCase):
+    def test_omits_zero_hours_and_zero_minutes(self):
+        self.assertEqual(main.format_hours_mins(41), "41分")
+        self.assertEqual(main.format_hours_mins(0), "0分")
+        self.assertEqual(main.format_hours_mins(120), "2時間")
+        self.assertEqual(main.format_hours_mins(80), "1時間 20分")
 
 
 class ReportServiceTest(unittest.TestCase):
