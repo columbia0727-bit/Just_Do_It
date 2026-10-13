@@ -205,12 +205,15 @@ function sendWeeklyReports() {
     const logs = snapshot.logsByUser[userId] || [];
     const current = summarize_(logs, week.start, week.end);
     const previous = summarize_(logs, week.prevStart, week.start);
+    const unsubscribeUrl = unsubscribeUrl_(baseUrl, userId);
     try {
       MailApp.sendEmail({
         to: email,
         name: "Just do it.",
         subject: "【Just do it.】先週の作業レポート（" + formatDay_(week.start) + "〜" + formatDay_(week.lastDay) + "）",
-        body: buildReportBody_(week, current, previous, unsubscribeUrl_(baseUrl, userId)),
+        // HTML を表示できないメールソフト向けにテキスト版も付ける
+        body: buildReportBody_(week, current, previous, unsubscribeUrl),
+        htmlBody: buildReportHtml_(week, current, previous, unsubscribeUrl),
       });
       sent++;
     } catch (err) {
@@ -270,6 +273,181 @@ function buildReportBody_(week, current, previous, unsubscribeUrl) {
     "配信停止はこちら: " + unsubscribeUrl
   );
   return lines.join("\n");
+}
+
+// ==========================================
+// HTML メール（Gmail で崩れないよう、表とインラインスタイルだけで組む）
+// ==========================================
+const MAIL_COLORS = {
+  accent: "#2f6f62",
+  accentSoft: "#dbe9e5",
+  text: "#222222",
+  muted: "#8a8a86",
+  border: "#e4e4e0",
+  paper: "#f7f7f5",
+};
+const WEEKDAYS = ["月", "火", "水", "木", "金", "土", "日"];
+
+function buildReportHtml_(week, current, previous, unsubscribeUrl) {
+  const c = MAIL_COLORS;
+  const range = formatDay_(week.start) + "〜" + formatDay_(week.lastDay);
+  const sections = [
+    htmlHero_(current, previous),
+    htmlStats_(current),
+    current.totalMinutes > 0 ? htmlDailyChart_(current) : "",
+    current.totalMinutes > 0 ? htmlTaskBars_(current) : "",
+    '<p style="margin:28px 0 0;font-size:15px;line-height:1.8;color:' + c.text + ';">' +
+      escapeHtml_(cheerMessage_(current, previous)) + "</p>",
+  ];
+
+  return (
+    '<div style="margin:0;padding:24px 12px;background:' + c.paper + ';">' +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;margin:0 auto;' +
+    "background:#ffffff;border-radius:12px;font-family:'Hiragino Sans','Yu Gothic UI','Meiryo',sans-serif;color:" + c.text + ';">' +
+    '<tr><td style="padding:28px 28px 8px;">' +
+    '<div style="font-size:13px;font-weight:bold;color:' + c.accent + ';">Just do it.</div>' +
+    '<div style="margin-top:4px;font-size:20px;font-weight:bold;">先週のレポート</div>' +
+    '<div style="margin-top:2px;font-size:13px;color:' + c.muted + ';">' + range + "</div>" +
+    "</td></tr>" +
+    '<tr><td style="padding:8px 28px 28px;">' + sections.join("") + "</td></tr>" +
+    "</table>" +
+    '<p style="max-width:520px;margin:16px auto 0;font-size:11px;line-height:1.7;color:' + c.muted + ';text-align:center;">' +
+    "このメールは「Just do it.」アプリの週次レポート登録者に自動送信しています。<br>" +
+    '<a href="' + escapeHtml_(unsubscribeUrl) + '" style="color:' + c.muted + ';">配信を停止する</a></p>' +
+    "</div>"
+  );
+}
+
+// 合計時間を大きく、前の週との差を添える
+function htmlHero_(current, previous) {
+  const c = MAIL_COLORS;
+  const diff = current.totalMinutes - previous.totalMinutes;
+  let diffHtml = "";
+  // 記録がなかった週は、前の週との差（マイナス）を見せて落ち込ませない
+  if (current.totalMinutes > 0) {
+    const up = diff > 0;
+    diffHtml =
+      '<span style="display:inline-block;margin-top:8px;padding:3px 10px;border-radius:999px;font-size:13px;' +
+      "background:" + (up ? c.accentSoft : c.paper) + ";color:" + (up ? c.accent : c.muted) + ';">' +
+      "前の週より " + formatDiff_(diff) + (up ? " ↑" : "") + "</span>";
+  }
+  return (
+    '<div style="margin-top:16px;padding:20px;border-radius:10px;background:' + c.paper + ';text-align:center;">' +
+    '<div style="font-size:13px;color:' + c.muted + ';">先週の作業時間</div>' +
+    '<div style="margin-top:4px;font-size:34px;font-weight:bold;color:' + c.accent + ';">' +
+    formatHoursMins_(current.totalMinutes) + "</div>" +
+    diffHtml +
+    "</div>"
+  );
+}
+
+// 記録した日（7つの丸）・記録回数・一番がんばった日
+function htmlStats_(current) {
+  const c = MAIL_COLORS;
+  const dots = current.dayMinutes
+    .map((mins) =>
+      '<span style="display:inline-block;width:12px;height:12px;margin-right:4px;border-radius:50%;background:' +
+      (mins > 0 ? c.accent : c.border) + ';"></span>'
+    )
+    .join("");
+
+  let bestHtml = "—";
+  if (current.totalMinutes > 0) {
+    const best = current.dayMinutes.indexOf(Math.max.apply(null, current.dayMinutes));
+    bestHtml = WEEKDAYS[best] + "曜日 " + formatHoursMins_(current.dayMinutes[best]);
+  }
+
+  // スマホでも崩れないよう、横に並べず「項目名｜値」の行にする
+  const row = (label, value) =>
+    "<tr>" +
+    '<td style="padding:12px 0;border-bottom:1px solid ' + c.border + ";font-size:13px;color:" + c.muted + ';">' + label + "</td>" +
+    '<td align="right" style="padding:12px 0;border-bottom:1px solid ' + c.border + ';font-size:15px;font-weight:bold;white-space:nowrap;">' +
+    value + "</td></tr>";
+
+  return (
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:8px;">' +
+    row("記録した日", '<span style="margin-right:8px;">' + dots + "</span>" + current.days + " / 7日") +
+    row("記録回数", current.count + "回") +
+    row("一番がんばった日", bestHtml) +
+    "</table>"
+  );
+}
+
+// 曜日ごとの棒グラフ（画像を使わず、高さを指定したセルで描く）
+function htmlDailyChart_(current) {
+  const c = MAIL_COLORS;
+  const maxHeight = 110;
+  const max = Math.max.apply(null, current.dayMinutes);
+  const bars = current.dayMinutes
+    .map((mins) => {
+      const height = mins > 0 ? Math.max(4, Math.round((mins / max) * maxHeight)) : 2;
+      return (
+        '<td valign="bottom" align="center" style="width:14%;padding:0 4px;">' +
+        '<div style="font-size:11px;color:' + c.muted + ';white-space:nowrap;">' + (mins > 0 ? mins + "分" : "") + "</div>" +
+        '<div style="height:' + height + "px;margin-top:4px;border-radius:4px 4px 0 0;background:" +
+        (mins > 0 ? c.accent : c.border) + ';line-height:1px;font-size:1px;">&nbsp;</div>' +
+        "</td>"
+      );
+    })
+    .join("");
+  const labels = WEEKDAYS.map(
+    (day) => '<td align="center" style="padding-top:6px;font-size:12px;color:' + c.muted + ';">' + day + "</td>"
+  ).join("");
+
+  return (
+    htmlSectionTitle_("曜日ごとの作業時間") +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="height:' + (maxHeight + 24) + 'px;">' +
+    "<tr>" + bars + "</tr>" +
+    '<tr><td colspan="7" style="border-top:1px solid ' + c.border + ';font-size:1px;line-height:1px;">&nbsp;</td></tr>' +
+    "<tr>" + labels + "</tr></table>"
+  );
+}
+
+// 作業内容ごとの割合バー（上位5件、残りは「その他」）
+function htmlTaskBars_(current) {
+  const c = MAIL_COLORS;
+  const entries = Object.keys(current.taskMap)
+    .map((task) => [task, current.taskMap[task]])
+    .sort((a, b) => b[1] - a[1]);
+  const top = entries.slice(0, 5);
+  const rest = entries.slice(5).reduce((sum, entry) => sum + entry[1], 0);
+  if (rest > 0) top.push(["その他", rest]);
+
+  const rows = top
+    .map(([task, mins]) => {
+      const pct = Math.round((mins / current.totalMinutes) * 100);
+      return (
+        '<tr><td style="padding:10px 0 0;">' +
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>' +
+        '<td style="font-size:14px;">' + escapeHtml_(task) + "</td>" +
+        '<td align="right" style="font-size:13px;color:' + c.muted + ';white-space:nowrap;">' +
+        formatHoursMins_(mins) + "（" + pct + "%）</td></tr></table>" +
+        '<div style="margin-top:5px;height:8px;border-radius:4px;background:' + c.paper + ';">' +
+        '<div style="width:' + Math.max(pct, 2) + "%;height:8px;border-radius:4px;background:" + c.accent + ';"></div>' +
+        "</div></td></tr>"
+      );
+    })
+    .join("");
+
+  return (
+    htmlSectionTitle_("作業内容別") +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0">' + rows + "</table>"
+  );
+}
+
+function htmlSectionTitle_(title) {
+  return (
+    '<div style="margin:28px 0 12px;font-size:14px;font-weight:bold;">' + title + "</div>"
+  );
+}
+
+function escapeHtml_(text) {
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function cheerMessage_(current, previous) {
@@ -380,9 +558,10 @@ function groupLogsByUser_(rows, from, to) {
   return logsByUser;
 }
 
+// dayMinutes は from から1日ごとの合計（週なら [月, 火, …, 日] の7個）
 function summarize_(logs, from, to) {
-  const summary = { totalMinutes: 0, count: 0, days: 0, taskMap: {} };
-  const daySet = {};
+  const dayCount = Math.round((to - from) / 86400000);
+  const summary = { totalMinutes: 0, count: 0, days: 0, taskMap: {}, dayMinutes: new Array(dayCount).fill(0) };
   logs.forEach((log) => {
     if (log.date < from || log.date >= to) {
       return;
@@ -390,9 +569,10 @@ function summarize_(logs, from, to) {
     summary.totalMinutes += log.minutes;
     summary.count++;
     summary.taskMap[log.task] = (summary.taskMap[log.task] || 0) + log.minutes;
-    daySet[log.date.toDateString()] = true;
+    const dayIndex = Math.round((addDays_(log.date, 0) - from) / 86400000);
+    summary.dayMinutes[dayIndex] += log.minutes;
   });
-  summary.days = Object.keys(daySet).length;
+  summary.days = summary.dayMinutes.filter((mins) => mins > 0).length;
   return summary;
 }
 
