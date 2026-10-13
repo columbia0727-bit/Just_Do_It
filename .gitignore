@@ -1,0 +1,21 @@
+# 個人の作業ログ・設定（GAS URL を含む）は公開しない
+log/
+config.json
+
+# 発表資料・作業メモ（非公開）
+text/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# OS
+.DS_Store
+Thumbs.db
