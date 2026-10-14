@@ -242,7 +242,13 @@ def _to_photo(image: Image.Image, size: tuple[int, int]) -> ImageTk.PhotoImage:
 
 
 def rounded_rect_image(
-    width: int, height: int, radius: int, fill: str, background: str, outline: str | None = None
+    width: int,
+    height: int,
+    radius: int,
+    fill: str,
+    background: str,
+    outline: str | None = None,
+    outline_width: int = 1,
 ) -> ImageTk.PhotoImage:
     s = SUPERSAMPLE
     image = Image.new("RGB", (width * s, height * s), background)
@@ -251,7 +257,7 @@ def rounded_rect_image(
         radius=radius * s,
         fill=fill,
         outline=outline,
-        width=s if outline else 0,
+        width=outline_width * s if outline else 0,
     )
     return _to_photo(image, (width, height))
 
@@ -282,6 +288,7 @@ class PillButton(tk.Label):
     kind: "primary"（塗りつぶし・1画面に1つ）/ "secondary"（枠線）/ "chip"（小さな候補）/
           "tab"・"tab_active"（切り替えタブ）/ "select"（選択欄。角丸を小さくして入力欄に似せる）
     マウスを乗せたときはカーソルを変えず、ボタンの色だけを変える（指の形のカーソルは Mac で不自然に見えるため）
+    Tab キーで選ぶと、文字色の枠で囲んで示し、Enter・スペースキーで押せる
     """
 
     def __init__(
@@ -323,8 +330,9 @@ class PillButton(tk.Label):
         )
         self.height = px(height)
         self.radius = px(8) if kind == "select" else self.height // 2
-        self.images: dict[tuple[int, bool], ImageTk.PhotoImage] = {}
+        self.images: dict[tuple[int, bool, bool], ImageTk.PhotoImage] = {}
         self.hovering = False
+        self.focused = False
         if width is None and kind in ("chip", "tab", "tab_active"):
             # 文字の幅に合わせる
             width = round(tkfont.Font(font=self["font"]).measure(text) / _scale) + 28
@@ -335,25 +343,50 @@ class PillButton(tk.Label):
             self.bind("<Button-1>", lambda event: command())
             self.bind("<Enter>", lambda event: self.set_hover(True))
             self.bind("<Leave>", lambda event: self.set_hover(False))
+            self.config(takefocus=1)
+            bind_activate(self, command)
+            self.bind("<FocusIn>", lambda event: self.set_focus(True))
+            self.bind("<FocusOut>", lambda event: self.set_focus(False))
         if not self.fixed_width:
             self.bind("<Configure>", lambda event: self.draw(event.width))
 
     def draw(self, width: int) -> None:
         self.current_width = width
-        key = (width, self.hovering)
+        key = (width, self.hovering, self.focused)
         if key not in self.images:
             fill = self.hover if self.hovering else self.fill
             # 背景色は "SystemButtonFace" のような名前のこともあるので、#rrggbb にしてから描く
             red, green, blue = (value // 256 for value in self.winfo_rgb(self["bg"]))
             background = f"#{red:02x}{green:02x}{blue:02x}"
+            outline, outline_width = (C.text, 2) if self.focused else (self.outline, 1)
             self.images[key] = rounded_rect_image(
-                width, self.height, self.radius, fill, background=background, outline=self.outline
+                width, self.height, self.radius, fill, background, outline=outline, outline_width=outline_width
             )
         self.config(image=self.images[key])
 
     def set_hover(self, hovering: bool) -> None:
         self.hovering = hovering
         self.draw(self.current_width)
+
+    def set_focus(self, focused: bool) -> None:
+        # 押したボタンで画面を切り替えると、消える途中で呼ばれることがある
+        if self.winfo_exists():
+            self.focused = focused
+            self.draw(self.current_width)
+
+
+def bind_activate(widget: tk.Widget, command: Callable[[], object]) -> None:
+    """Tab キーで選んだ部品を、Enter・スペースキーで押せるようにする
+
+    "break" を返して、画面全体に登録した同じキー（Enter で保存など）が続けて動かないようにする。
+    """
+
+    def activate(event: tk.Event) -> str:
+        command()
+        return "break"
+
+    for sequence in ("<Return>", "<KP_Enter>", "<space>"):
+        widget.bind(sequence, activate)
 
 
 # ==========================================
@@ -380,10 +413,18 @@ def make_back_button(parent: tk.Widget, command: Callable[[], object]) -> PillBu
 def make_link(parent: tk.Widget, text: str, command: Callable[[], object], accent: bool = False) -> tk.Label:
     """目立たせたくない操作用の、文字だけのボタン（accent なら、気づいてほしいお知らせ用にアクセント色にする）"""
     color, hover = (C.accent, C.accent_hover) if accent else (C.muted, C.text)
-    link = make_label(parent, text, size=10, color=color)
+    link = make_label(parent, text, size=10, color=color, takefocus=1)
     link.bind("<Button-1>", lambda event: command())
     link.bind("<Enter>", lambda event: link.config(fg=hover))
     link.bind("<Leave>", lambda event: link.config(fg=color))
+    # Tab キーで選んだときは、下線を引いて示す
+    def show_focus(focused: bool) -> None:
+        if link.winfo_exists():
+            link.config(fg=hover if focused else color, font=ui_font(10) + (("underline",) if focused else ()))
+
+    link.bind("<FocusIn>", lambda event: show_focus(True))
+    link.bind("<FocusOut>", lambda event: show_focus(False))
+    bind_activate(link, command)
     return link
 
 
@@ -474,7 +515,10 @@ def make_checkbox(parent: tk.Widget, text: str, checked: bool, on_change: Callab
         selectcolor=C.surface,
         anchor="w",
         bd=0,
-        highlightthickness=0,
+        # Tab キーで選んだときだけ、文字色の枠で囲む（スペースキーで切り替えられる）
+        highlightthickness=1,
+        highlightcolor=C.text,
+        highlightbackground=parent["bg"],
     )
     # var は command の中で使っているので、ボタンがある間は消えない
     return box

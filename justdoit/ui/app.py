@@ -369,8 +369,10 @@ class JustDoItApp:
         def start_now():
             timer.show_focus_timer(self, timer.FOCUS_SHORT_SECONDS)
 
-        make_link(screen, "メニューを見る", self.show_main_menu).pack(side="bottom", pady=(10, 0))
-        make_button(screen, "5分だけやってみる", start_now, primary=True).pack(side="bottom", fill="x")
+        actions = tk.Frame(screen, bg=C.bg)
+        actions.pack(side="bottom", fill="x")
+        make_button(actions, "5分だけやってみる", start_now, primary=True).pack(fill="x")
+        make_link(actions, "メニューを見る", self.show_main_menu).pack(pady=(10, 0))
         self.bind_key("<Return>", start_now)
 
 

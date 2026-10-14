@@ -68,6 +68,9 @@ def show_history(app: JustDoItApp, back: Callable[[], None]) -> None:
     make_label(top, "直したい記録を選んでください", size=10, color=C.muted).pack(side="left", padx=(12, 0))
     table = build_table(app, screen, records)
     table.bind("<<TreeviewSelect>>", lambda event: form.load(records[table.index(table.selection()[0])]))
+    # Tab キーで選ぶ順（重なり順）を、見た目どおり「月 → 表 → 入力欄 → ボタン」にそろえる
+    for frame in (top, table.master, form.fields, form.buttons):
+        frame.lift()
 
 
 def build_table(app: JustDoItApp, screen: tk.Frame, records: list[Record]) -> ttk.Treeview:
@@ -121,12 +124,14 @@ class RecordForm:
         self.record: Record | None = None
 
         # 画面の下から「ボタン」「入力欄」の順に積む
-        buttons = tk.Frame(screen, bg=screen["bg"])
+        self.buttons = buttons = tk.Frame(screen, bg=screen["bg"])
         buttons.pack(side="bottom", fill="x", pady=(4, 8))
-        make_button(buttons, "削除する", self.delete, width=110).pack(side="right")
+        delete_button = make_button(buttons, "削除する", self.delete, width=110)
+        delete_button.pack(side="right")
         make_button(buttons, "修正を保存", self.save, primary=True, width=130).pack(side="right", padx=(0, 8))
+        delete_button.lift()  # Tab キーでは、左にある「修正を保存」を先に選ぶ
 
-        form = tk.Frame(screen, bg=screen["bg"])
+        self.fields = form = tk.Frame(screen, bg=screen["bg"])
         form.pack(side="bottom", fill="x", pady=(12, 0))
         for column, text in enumerate(["やったこと", "日付", "時刻", "時間（分）"]):
             make_label(form, text, size=11).grid(row=0, column=column, sticky="w", padx=(0 if column == 0 else 10, 0))

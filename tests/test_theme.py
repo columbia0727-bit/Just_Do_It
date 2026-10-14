@@ -1,3 +1,4 @@
+from functools import partial
 from pathlib import Path
 import re
 import sys
@@ -131,6 +132,25 @@ class ThemeColorsTest(unittest.TestCase):
 
         select.current(0)  # 表示だけ戻す（保存に失敗したときなど）。on_select は呼ばない
         self.assertEqual((select.get(), chosen), ("15分", [2]))
+
+    def test_buttons_and_links_work_with_keyboard(self):
+        """Tab キーで選べて、Enter・スペースで1回だけ押せる（画面全体に登録した Enter は動かない）"""
+        self.root.deiconify()
+        screen_keys = []
+        self.root.bind("<Return>", lambda event: screen_keys.append("Return"))
+        for make in (theme.make_button, theme.make_link):
+            pressed = []
+            widget = make(self.root, "x", partial(pressed.append, 1))
+            widget.pack()
+            self.assertEqual(int(widget.cget("takefocus")), 1)
+            widget.focus_force()
+            self.root.update()
+            widget.event_generate("<Return>")
+            widget.event_generate("<space>")
+            self.assertEqual(pressed, [1, 1], make.__name__)
+        self.assertEqual(screen_keys, [])
+        # 押すためのものではない（選んでいるタブなど）は、Tab キーで選ばない
+        self.assertIn(str(theme.PillButton(self.root, "x", None, kind="tab_active").cget("takefocus")), ("", "0"))
 
     def test_widgets_use_only_palette_colors(self):
         visible_options = (

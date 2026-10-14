@@ -194,10 +194,13 @@ def show_record_form(
         if on_continue:
             on_continue()
 
-    make_link(screen, "記録しない", skip).pack(side="bottom", pady=(10, 0))
-    make_button(screen, save_text, save, primary=True).pack(side="bottom", fill="x")
+    # 下にまとめて置き、上から順に作る（Tab キーで選ぶ順を、見た目の順にそろえるため）
+    actions = tk.Frame(screen, bg=C.bg)
+    actions.pack(side="bottom", fill="x")
     if on_continue:
-        make_button(screen, continue_text, keep_going).pack(side="bottom", fill="x", pady=(0, 8))
+        make_button(actions, continue_text, keep_going).pack(fill="x", pady=(0, 8))
+    make_button(actions, save_text, save, primary=True).pack(fill="x")
+    make_link(actions, "記録しない", skip).pack(pady=(10, 0))
     task_entry.bind("<Return>", save)
     app.close_guard = lambda: confirm_discard(app, task_entry)
 

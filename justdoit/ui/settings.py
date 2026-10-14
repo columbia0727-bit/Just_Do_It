@@ -53,15 +53,19 @@ def show_settings(app: JustDoItApp, tab: str | None = None) -> None:
 
     make_tabs(header, TABS, app.settings_tab, switch_tab).pack(side="left", padx=(app.px(16), 0))
 
-    build_data_folder(app, screen)
-    build_version(app, screen)
+    folder = build_data_folder(app, screen)
+    version = build_version(app, screen)
     if app.settings_tab == "timer":
         build_timer_section(app, screen)
     else:
         build_report_section(app, screen)
+    # 下の欄は、ほかの欄に押し出されないよう先に作っている。Tab キーでは見た目どおり最後に選ばれるよう、
+    # 重なり順を上げる（Tab で選ぶ順は、この重なり順）
+    version.lift()
+    folder.lift()
 
 
-def build_version(app: JustDoItApp, screen: tk.Frame) -> None:
+def build_version(app: JustDoItApp, screen: tk.Frame) -> tk.Frame:
     """保存先の上: 今のバージョンと、新しいバージョンがあればダウンロードページへの案内"""
     row = tk.Frame(screen, bg=screen["bg"])
     row.pack(side="bottom", fill="x", pady=(0, app.px(6)))
@@ -71,9 +75,10 @@ def build_version(app: JustDoItApp, screen: tk.Frame) -> None:
         make_link(
             row, f"新しいバージョン {release.version} をダウンロード", lambda: webbrowser.open(release.url), accent=True
         ).pack(side="right")
+    return row
 
 
-def build_data_folder(app: JustDoItApp, screen: tk.Frame) -> None:
+def build_data_folder(app: JustDoItApp, screen: tk.Frame) -> tk.Frame:
     """画面の一番下: 作業ログの保存先と「フォルダを開く」"""
     footer = tk.Frame(screen, bg=screen["bg"])
     footer.pack(side="bottom", fill="x")
@@ -86,6 +91,7 @@ def build_data_folder(app: JustDoItApp, screen: tk.Frame) -> None:
         justify="left",
     ).pack(side="left", anchor="w")
     make_link(footer, "フォルダを開く", lambda: open_folder(app, config.get_data_dir())).pack(side="right")
+    return footer
 
 
 def open_folder(app: JustDoItApp, path: Path) -> None:
