@@ -196,6 +196,17 @@ python main.py
 ```bash
 python -m unittest discover -s tests -v
 ```
+コードの書き方・型のチェックと、週次レポート配信サービス（GAS）のテスト（Node.js が必要）：
+```bash
+python -m ruff check .
+```
+```bash
+python -m mypy
+```
+```bash
+node gas/tests/run.js
+```
+GAS のテストは、本物の `Code.js` を模擬環境（スプレッドシート・メール・時計を手元で再現したもの）に読み込み、登録・同期・レポートの配信タイミングなどを確かめます。GitHub Actions では、これらをすべて毎回実行します。
 画面を表示するテストは、ディスプレイのない環境では自動でスキップされます（GitHub Actions では仮想ディスプレイ上で実行）。
 
 依存ライブラリは、動作を確かめたバージョンに固定しています（`requirements.txt`）。新しいバージョンが出ると Dependabot がプルリクエストを作り、GitHub Actions のテストと配布版の動作確認が通ってから取り込みます。ソースから起動した場合、記録と設定は `main.py` と同じフォルダに保存されます。

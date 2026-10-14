@@ -122,7 +122,8 @@ class FetchAndApplyTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_fetch_sends_queue_first_then_pulls(self):
-        report_service.enqueue_logs(config.get_report_queue_path(), [report_service.make_log("2026-10-12 09:00:00", "制作", 25)])
+        pending = [report_service.make_log("2026-10-12 09:00:00", "制作", 25)]
+        report_service.enqueue_logs(config.get_report_queue_path(), pending)
         pulled = {
             "status": "success",
             "logs": [server_log("2026-10-13 09:00:00", "読書", 20)],
@@ -139,7 +140,8 @@ class FetchAndApplyTest(unittest.TestCase):
 
     def test_fetch_fails_when_queue_cannot_be_sent(self):
         # 「消した」が届かないまま突き合わせると、消した記録が戻ってきてしまうため、同期しない
-        report_service.enqueue_logs(config.get_report_queue_path(), [report_service.make_log("2026-10-12 09:00:00", "制作", 25)])
+        pending = [report_service.make_log("2026-10-12 09:00:00", "制作", 25)]
+        report_service.enqueue_logs(config.get_report_queue_path(), pending)
         with mock.patch.object(report_service, "post_json", side_effect=OSError("offline")):
             with self.assertRaises(ReportServiceError):
                 sync.fetch_server_state()

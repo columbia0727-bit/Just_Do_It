@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 import tkinter as tk
 from tkinter import messagebox, ttk
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Literal
 
 from justdoit import config, report_service
 from justdoit.records import (
@@ -61,13 +62,19 @@ def build_table(app: JustDoItApp, screen: tk.Frame, records: list[Record]) -> tt
     frame = tk.Frame(screen, bg=screen["bg"])
     frame.pack(fill="both", expand=True)
     table = ttk.Treeview(
-        frame, columns=("when", "task", "minutes"), show="headings", height=9, selectmode="browse", style="Records.Treeview"
+        frame,
+        columns=("when", "task", "minutes"),
+        show="headings",
+        height=9,
+        selectmode="browse",
+        style="Records.Treeview",
     )
-    for column, text, width, anchor in [
+    columns: list[tuple[str, str, int, Literal["w", "e"]]] = [
         ("when", "日時", 150, "w"),
         ("task", "やったこと", 250, "w"),
         ("minutes", "時間", 70, "e"),
-    ]:
+    ]
+    for column, text, width, anchor in columns:
         table.heading(column, text=text, anchor=anchor)
         table.column(column, width=app.px(width), anchor=anchor, stretch=column == "task")
     for record in records:
@@ -80,6 +87,11 @@ def build_table(app: JustDoItApp, screen: tk.Frame, records: list[Record]) -> tt
     scrollbar.pack(side="right", fill="y")
     table.pack(side="left", fill="both", expand=True)
     return table
+
+
+def report_log(record: Record) -> dict:
+    """記録を、配信サービスに送ったときと同じ形にする（サーバー側で探す手がかり）"""
+    return report_service.make_log(record.recorded_at.strftime(DATETIME_FORMAT), record.task, record.minutes)
 
 
 class RecordForm:
@@ -128,32 +140,30 @@ class RecordForm:
             self.error_label.config(text=result)
             return
         task, minutes = result
-        if (task, minutes) == (self.record.task, self.record.minutes):
+        record = self.record
+        if (task, minutes) == (record.task, record.minutes):
             self.on_changed()  # 何も変わっていない
             return
         self.apply(
-            lambda: update_record(self.csv_path, self.record.row_index, task, minutes),
-            report_service.make_update(self.report_log(), task, minutes),
+            lambda: update_record(self.csv_path, record.row_index, task, minutes),
+            report_service.make_update(report_log(record), task, minutes),
         )
 
     def delete(self) -> None:
         if self.record is None:
             self.error_label.config(text="一覧から記録を選んでください")
             return
-        when = self.record.recorded_at.strftime("%m/%d %H:%M")
+        record = self.record
+        when = record.recorded_at.strftime("%m/%d %H:%M")
         if messagebox.askyesno(
-            "削除の確認", f"{when}「{self.record.task}」（{self.record.minutes}分）を削除しますか？", parent=self.app.root
+            "削除の確認",
+            f"{when}「{record.task}」（{record.minutes}分）を削除しますか？",
+            parent=self.app.root,
         ):
             self.apply(
-                lambda: delete_record(self.csv_path, self.record.row_index),
-                report_service.make_delete(self.report_log()),
+                lambda: delete_record(self.csv_path, record.row_index),
+                report_service.make_delete(report_log(record)),
             )
-
-    def report_log(self) -> dict:
-        """選んでいる記録を、配信サービスに送ったときと同じ形にする（サーバー側で探す手がかり）"""
-        return report_service.make_log(
-            self.record.recorded_at.strftime(DATETIME_FORMAT), self.record.task, self.record.minutes
-        )
 
     def apply(self, change: Callable[[], None], report_item: dict) -> None:
         """CSV を書き換えて一覧を表示し直す（Excel で開いているなどで書き込めなければ知らせる）

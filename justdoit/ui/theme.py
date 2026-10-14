@@ -4,14 +4,15 @@
 ライト用・ダーク用に入れ替え、画面を作り直すと新しい色で表示される。
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass, fields
+from functools import partial
 import math
 import platform
 import subprocess
 import tkinter as tk
 from tkinter import font as tkfont
 from tkinter import ttk
-from typing import Callable
 
 from PIL import Image, ImageDraw, ImageTk
 
@@ -237,7 +238,7 @@ SUPERSAMPLE = 4
 
 def _to_photo(image: Image.Image, size: tuple[int, int]) -> ImageTk.PhotoImage:
     """縮小して Tk の画像にする（半透明の縁は Tk でうまく混ざらないので、背景色ごと描いた不透明な画像にする）"""
-    return ImageTk.PhotoImage(image.resize(size, Image.LANCZOS))
+    return ImageTk.PhotoImage(image.resize(size, Image.Resampling.LANCZOS))
 
 
 def rounded_rect_image(
@@ -427,7 +428,7 @@ class SelectButton(PillButton):
         selected = tk.IntVar(value=self.index)
         for index, value in enumerate(self.values):
             menu.add_radiobutton(
-                label=value, variable=selected, value=index, command=lambda index=index: self.choose(index)
+                label=value, variable=selected, value=index, command=partial(self.choose, index)
             )
         try:
             # 選択欄のすぐ下に開く
@@ -475,7 +476,7 @@ def make_checkbox(parent: tk.Widget, text: str, checked: bool, on_change: Callab
         bd=0,
         highlightthickness=0,
     )
-    box.var = var  # 変数が消えないよう、ウィジェットに持たせておく
+    # var は command の中で使っているので、ボタンがある間は消えない
     return box
 
 
@@ -523,6 +524,6 @@ def make_tabs(
     for key, text in options:
         active = key == selected
         PillButton(
-            tabs, text, None if active else lambda k=key: on_select(k), kind="tab_active" if active else "tab"
+            tabs, text, None if active else partial(on_select, key), kind="tab_active" if active else "tab"
         ).pack(side="left", padx=(0, px(2)))
     return tabs

@@ -46,7 +46,15 @@ def is_registered() -> bool:
 def get_schedule(settings: dict) -> tuple[int, int]:
     """設定に保存された「届くタイミング」(曜日, 時) を返す（未設定・不正な値なら既定のタイミング）"""
     weekday, hour = settings.get("report_weekday"), settings.get("report_hour")
-    if weekday in range(len(WEEKDAY_NAMES)) and hour in REPORT_HOURS:
+    # True・1.0 なども「in range」に当てはまってしまうので、整数かどうかも確かめる
+    if (
+        isinstance(weekday, int)
+        and isinstance(hour, int)
+        and not isinstance(weekday, bool)
+        and not isinstance(hour, bool)
+        and weekday in range(len(WEEKDAY_NAMES))
+        and hour in REPORT_HOURS
+    ):
         return weekday, hour
     return DEFAULT_SCHEDULE
 

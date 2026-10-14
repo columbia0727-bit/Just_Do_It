@@ -14,6 +14,28 @@ permissions:
   contents: write
 
 jobs:
+  # コードの書き方（ruff）と型（mypy）のチェック
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-dev.txt
+      - run: python -m ruff check .
+      - run: python -m mypy
+
+  # 週次レポート配信サービス（GAS）のテスト。本物の Code.js を模擬環境に読み込んで確かめる
+  gas-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - run: node gas/tests/run.js
+
   test:
     runs-on: ubuntu-latest
     steps:
@@ -39,7 +61,7 @@ jobs:
           EOF
 
   build:
-    needs: test
+    needs: [lint, gas-test, test]
     strategy:
       matrix:
         include:

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import replace
+from functools import partial
 import os
 from pathlib import Path
 import platform
@@ -11,7 +13,7 @@ import subprocess
 import threading
 import tkinter as tk
 from tkinter import messagebox, simpledialog
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 import webbrowser
 
 from justdoit import __version__, config, report_service
@@ -44,13 +46,12 @@ def show_settings(app: JustDoItApp, tab: str | None = None) -> None:
         app.settings_tab = tab
     screen = app.make_screen(SETTINGS_SIZE)
     header = app.make_header(screen, "設定")
-    make_tabs(
-        header,
-        TABS,
-        app.settings_tab,
+    def switch_tab(key: str) -> None:
         # 通信中はタブも切り替えない（戻るボタンと同じ理由）
-        lambda key: app.busy or show_settings(app, key),
-    ).pack(side="left", padx=(app.px(16), 0))
+        if not app.busy:
+            show_settings(app, key)
+
+    make_tabs(header, TABS, app.settings_tab, switch_tab).pack(side="left", padx=(app.px(16), 0))
 
     build_data_folder(app, screen)
     build_version(app, screen)
@@ -120,6 +121,12 @@ def build_timer_section(app: JustDoItApp, screen: tk.Frame) -> None:
         change(appearance=theme.APPEARANCE_CHOICES[index][0])
         show_settings(app)  # 新しい色で作り直す
 
+    def choose_minutes(key: str, choices: tuple[int, ...], index: int) -> None:
+        change(**{key: choices[index]})
+
+    def toggle(key: str, checked: bool) -> None:
+        change(**{key: checked})
+
     rows = tk.Frame(screen, bg=screen["bg"])
     rows.pack(anchor="w")
     make_label(rows, "表示", bold=True).grid(row=0, column=0, columnspan=2, sticky="w")
@@ -144,7 +151,7 @@ def build_timer_section(app: JustDoItApp, screen: tk.Frame) -> None:
             rows,
             [f"{mins}分" for mins in choices],
             choices.index(current),
-            lambda index, choices=choices, key=key: change(**{key: choices[index]}),
+            partial(choose_minutes, key, choices),
         ).grid(row=row, column=1, sticky="w", padx=(12, 0), pady=3)
     make_label(screen, "「5分だけやる」はいつでも5分です。", size=10, color=C.muted).pack(anchor="w", pady=(2, 0))
 
@@ -154,9 +161,7 @@ def build_timer_section(app: JustDoItApp, screen: tk.Frame) -> None:
         ("ウィンドウを前面に出す", "notify_front"),
         ("OS の通知を出す（画面の隅にお知らせが表示されます）", "notify_os"),
     ]:
-        make_checkbox(screen, text, getattr(prefs, key), lambda checked, key=key: change(**{key: checked})).pack(
-            anchor="w"
-        )
+        make_checkbox(screen, text, getattr(prefs, key), partial(toggle, key)).pack(anchor="w")
 
     def try_notify():
         app.notify("Just do it.", "通知のテストです。タイマーが終わるとこのように知らせます。", prefs)
@@ -179,7 +184,8 @@ def build_report_section(app: JustDoItApp, frame: tk.Frame) -> None:
     if not report_service.get_service_url():
         make_label(
             frame,
-            "このビルドでは配信サービスが設定されていません。\n（開発者向け: README の「週次レポート配信サービス」を参照）",
+            "このビルドでは配信サービスが設定されていません。\n"
+            "（開発者向け: README の「週次レポート配信サービス」を参照）",
             size=10,
             color=C.muted,
             wraplength=app.px(TEXT_WIDTH),

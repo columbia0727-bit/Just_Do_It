@@ -50,7 +50,8 @@ class CheckForUpdateTest(unittest.TestCase):
     def test_returns_none_when_offline_or_broken(self):
         with mock.patch.object(updates.urllib.request, "urlopen", side_effect=urllib.error.URLError("offline")):
             self.assertIsNone(updates.check_for_update())
-        with mock.patch.object(updates.urllib.request, "urlopen", return_value=fake_response({"message": "rate limited"})):
+        broken = fake_response({"message": "rate limited"})
+        with mock.patch.object(updates.urllib.request, "urlopen", return_value=broken):
             self.assertIsNone(updates.check_for_update())
 
 

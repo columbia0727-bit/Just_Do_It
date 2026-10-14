@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 import tkinter as tk
 from tkinter import messagebox
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
+
+from PIL import ImageTk
 
 from justdoit import config
 from justdoit.records import load_records, recent_tasks, validate_record
@@ -42,10 +45,12 @@ def make_ring_clock(screen: tk.Frame, total_seconds: int) -> Callable[[int], Non
     """残り時間を、数字と円形の進捗リングで表示する。残り秒数を渡して表示を更新する関数を返す"""
     clock = tk.Label(screen, font=ui_font(34), fg=C.text, bg=screen["bg"], compound="center", bd=0)
     clock.pack(pady=(px(8), 0))
+    # 表示中の画像を持っておく（Python 側で参照が無くなると、Tk の画像も消えてしまう）
+    shown: dict[str, ImageTk.PhotoImage] = {}
 
     def update(remaining: int) -> None:
-        clock.image = ring_image(px(RING_SIZE), remaining / total_seconds, px(RING_THICKNESS))
-        clock.config(image=clock.image, text=format_clock(remaining))
+        shown["ring"] = ring_image(px(RING_SIZE), remaining / total_seconds, px(RING_THICKNESS))
+        clock.config(image=shown["ring"], text=format_clock(remaining))
 
     update(total_seconds)
     return update

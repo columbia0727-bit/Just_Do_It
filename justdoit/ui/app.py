@@ -1,5 +1,6 @@
 """アプリの土台（ウィンドウ・画面の切り替え・記録の保存・通知）とメインメニュー"""
 
+from collections.abc import Callable
 from datetime import datetime
 import platform
 import queue
@@ -7,7 +8,6 @@ import threading
 import tkinter as tk
 from tkinter import messagebox
 import traceback
-from typing import Callable
 import webbrowser
 
 from justdoit import __version__, config, notify, report_service, sync, updates
@@ -327,7 +327,10 @@ class JustDoItApp:
         if self.new_release:
             release = self.new_release
             make_link(
-                screen, f"新しいバージョン {release.version} があります", lambda: webbrowser.open(release.url), accent=True
+                screen,
+                f"新しいバージョン {release.version} があります",
+                lambda: webbrowser.open(release.url),
+                accent=True,
             ).pack(side="bottom", pady=(0, 10))
         self.on_menu = True
 

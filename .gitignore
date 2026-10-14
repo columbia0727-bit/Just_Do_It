@@ -11,6 +11,8 @@ text/
 # Python
 __pycache__/
 *.py[cod]
+.mypy_cache/
+.ruff_cache/
 .venv/
 venv/
 

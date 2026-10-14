@@ -52,8 +52,10 @@ def _show_windows_toast(title: str, message: str) -> None:
         "</binding></visual></toast>"
     )
     script = (
-        "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null;"
-        "$xml = [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime]::new();"
+        "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications,"
+        " ContentType = WindowsRuntime] > $null;"
+        "$xml = [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument,"
+        " ContentType = WindowsRuntime]::new();"
         f"$xml.LoadXml({_powershell_string(toast_xml)});"
         "$toast = [Windows.UI.Notifications.ToastNotification]::new($xml);"
         "[Windows.UI.Notifications.ToastNotificationManager]::"

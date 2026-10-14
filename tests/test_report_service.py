@@ -130,6 +130,13 @@ class ScheduleTest(unittest.TestCase):
         self.assertEqual(report_service.get_schedule({}), (0, 9))
         self.assertEqual(report_service.get_schedule({"report_weekday": 7, "report_hour": 9}), (0, 9))
         self.assertEqual(report_service.get_schedule({"report_weekday": 1, "report_hour": 3}), (0, 9))
+        self.assertEqual(report_service.get_schedule({"report_weekday": True, "report_hour": 9.0}), (0, 9))
+
+    def test_log_id_matches_server(self):
+        # 配信サービス（GAS）も、ID のない古い記録に同じ計算で ID を付ける
+        # （gas/tests/code_tests.js でも同じ値を確かめている）
+        log = report_service.make_log("2026-10-13 09:00:00", "読書", 20)
+        self.assertEqual(report_service.log_id(log), "d6ca0a222ae131bf471bfa88fff6a945")
 
     def test_format_schedule(self):
         self.assertEqual(report_service.format_schedule(0, 9), "毎週月曜 9時ごろ")

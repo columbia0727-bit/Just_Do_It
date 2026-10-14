@@ -64,7 +64,8 @@ def _run_screens(lines: list[str]) -> bool:
         when = (now - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
         records.append_record_to_csv(config.get_csv_path(), when, task, minutes)
 
-    from justdoit.ui import app as app_module, dashboard, history, settings, timer
+    from justdoit.ui import app as app_module
+    from justdoit.ui import dashboard, history, settings, timer
 
     errors: list[str] = []
     root.report_callback_exception = lambda *exc: errors.append("".join(traceback.format_exception(*exc)))

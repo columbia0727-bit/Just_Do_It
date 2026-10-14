@@ -93,7 +93,7 @@ class LoadEmptyCsvTest(unittest.TestCase):
             self.assertTrue(records.load_records(csv_path).empty)
             csv_path.write_bytes(b"")
             self.assertTrue(records.load_records(csv_path).empty)
-            csv_path.write_bytes("﻿".encode("utf-8"))
+            csv_path.write_bytes("﻿".encode())
             self.assertTrue(records.load_records(csv_path).empty)
 
 
@@ -141,7 +141,11 @@ class DailySummaryTest(unittest.TestCase):
 
     def test_recent_tasks_are_unique_and_newest_first(self):
         loaded = self.load(
-            [("2026-10-10 09:00:00", "制作", 25), ("2026-10-11 09:00:00", "学習", 5), ("2026-10-12 09:00:00", "制作", 5)]
+            [
+                ("2026-10-10 09:00:00", "制作", 25),
+                ("2026-10-11 09:00:00", "学習", 5),
+                ("2026-10-12 09:00:00", "制作", 5),
+            ]
         )
         self.assertEqual(records.recent_tasks(loaded), ["制作", "学習"])
         self.assertEqual(records.recent_tasks(loaded, limit=1), ["制作"])

@@ -199,8 +199,8 @@ def summarize_by_task(records: pd.DataFrame) -> pd.Series:
 
 def summarize_by_day(records: pd.DataFrame, days: int = 7, today: datetime | None = None) -> pd.Series:
     """直近 days 日分の日別合計（記録がない日も0分として含める）"""
-    today = (today or datetime.now()).date()
-    index = pd.date_range(today - timedelta(days=days - 1), today).date
+    today_date = (today or datetime.now()).date()
+    index = pd.date_range(today_date - timedelta(days=days - 1), today_date).date
     daily = records.groupby(records["日時"].dt.date)["分"].sum()
     return daily.reindex(index, fill_value=0)
 
