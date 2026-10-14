@@ -199,8 +199,12 @@ def build_report_section(app: JustDoItApp, frame: tk.Frame) -> None:
         # 最初のレポートを待たずに、届くか・どんな内容かをその場で確かめられるようにする
         make_button(frame, "テストメールを送る", lambda: send_test_report(app, status)).pack(fill="x", pady=(8, 0))
         build_sync_section(app, frame)
-        # 配信停止は押し間違えないよう、目立たない文字のボタンにする（押すと確認が出る）
-        make_link(frame, "配信を停止する", lambda: unregister(app)).pack(anchor="e", pady=(12, 0))
+        # 登録の解除・配信停止は押し間違えないよう、目立たない文字のボタンにする（押すと確認が出る）
+        links = tk.Frame(frame, bg=frame["bg"])
+        links.pack(fill="x", pady=(12, 0))
+        make_link(links, "すべての PC で配信を停止", lambda: unregister(app)).pack(side="right")
+        make_label(links, "・", size=10, color=C.border).pack(side="right", padx=4)
+        make_link(links, "この PC の登録を解除", lambda: remove_this_pc(app)).pack(side="right")
         return
 
     make_label(
@@ -471,10 +475,60 @@ def send_test_report(app: JustDoItApp, status: tk.Label) -> None:
 # ==========================================
 # 配信停止
 # ==========================================
+def remove_this_pc(app: JustDoItApp) -> None:
+    """この PC だけ登録を解除する（ほかの PC の同期・メール・サーバーの記録はそのまま）"""
+    if app.busy or not messagebox.askyesno(
+        "この PC の登録を解除",
+        "この PC だけ、週次レポートと同期の登録を解除しますか？\n\n"
+        "・同じメールアドレスで登録したほかの PC は、これまでどおり同期できます\n"
+        "・週次レポートのメールも、これまでどおり届きます\n"
+        "・この PC の記録は残ります",
+        parent=app.root,
+    ):
+        return
+    token = config.load_config().get("report_token")
+
+    def work():
+        # この PC でまだ送れていない記録を先に送る（ほかの PC から見えなくならないように）
+        url = report_service.get_service_url()
+        queue_path = config.get_report_queue_path()
+        report_service.sync_queue(url, queue_path, wait=True)
+        if report_service.load_queue(queue_path):
+            raise ReportServiceError(
+                "まだサーバーに送れていない記録があります。インターネットにつながっているときに、もう一度お試しください",
+                "network",
+            )
+        return report_service.call_service(url, {"action": "remove_device", "token": token})
+
+    def on_done(result, error):
+        app.busy = False
+        app.root.config(cursor="")
+        # すでにサーバー側で解除済み（unauthorized）なら、そのままアプリ側も解除する
+        if error and getattr(error, "code", None) != "unauthorized":
+            messagebox.showerror("解除できませんでした", str(error), parent=app.root)
+            return
+        try:
+            report_service.clear_registration()
+        except OSError as e:
+            messagebox.showerror("保存エラー", f"設定を保存できませんでした:\n{e}", parent=app.root)
+            return
+        show_settings(app)
+
+    app.busy = True
+    app.root.config(cursor="watch")
+    app.run_in_background(work, on_done)
+
+
 def unregister(app: JustDoItApp) -> None:
+    """すべての PC で配信と同期を停止し、サーバーの記録を消す"""
     if not messagebox.askyesno(
-        "配信停止",
-        "週次レポートの配信を停止しますか？\nサーバーに保存された作業記録も削除されます（アプリ内の記録は残ります）。",
+        "すべての PC で配信を停止",
+        "週次レポートの配信と、ほかの PC との同期を停止しますか？\n\n"
+        "・同じメールアドレスで登録したすべての PC で、登録が解除されます\n"
+        "・サーバーに預けている記録（最大400日分）は、すべて削除されます\n"
+        "・それぞれの PC の記録は残ります\n\n"
+        "この PC だけ使わなくなる場合は「この PC の登録を解除」を使ってください。",
+        icon="warning",
         parent=app.root,
     ):
         return

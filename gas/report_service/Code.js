@@ -88,6 +88,7 @@ function doPost(e) {
     update_schedule: handleUpdateSchedule_,
     send_test_report: handleSendTestReport_,
     sync_pull: handleSyncPull_,
+    remove_device: handleRemoveDevice_,
     unregister: handleUnregister_,
   };
   const handler = handlers[data.action];
@@ -367,7 +368,15 @@ function handleSendTestReport_(data) {
   return { status: "success" };
 }
 
-// アプリから配信を停止する
+// この PC だけ登録を解除する（この PC のトークンだけを消す。ほかの PC の同期・メール・サーバーの記録はそのまま）
+function handleRemoveDevice_(data) {
+  authenticate_(data.token);
+  const tokenHash = sha256Hex_(String(data.token));
+  keepRows_(getSheet_("tokens"), (r) => String(r[0]) !== tokenHash);
+  return { status: "success" };
+}
+
+// アプリから配信を停止する（その利用者のすべての PC のトークンと、サーバーの記録をすべて消す）
 function handleUnregister_(data) {
   deactivateUser_(authenticate_(data.token));
   return { status: "success" };
