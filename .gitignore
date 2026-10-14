@@ -2,6 +2,9 @@
 log/
 config.json
 
+# ビルドしたアプリの動作確認（--self-test）の結果
+selftest.log
+
 # 発表資料・作業メモ（非公開）
 text/
 

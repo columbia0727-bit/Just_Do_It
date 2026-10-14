@@ -1,0 +1,96 @@
+"""ビルドしたアプリの動作確認（JustDoIt --self-test）
+
+サンプルの記録を一時フォルダに作り、すべての画面を一度ずつ表示して、エラーが起きないかを確かめる。
+画面を持つアプリは、ビルドの設定（同梱するファイル）しだいで、ソースから起動したときは動くのに
+配布版だけ動かないことがあるため、GitHub Actions でビルドした直後に Windows・macOS それぞれで実行する。
+結果は selftest.log に書き、問題がなければ終了コード 0、あれば 1 で終わる。
+"""
+
+from datetime import datetime, timedelta
+from pathlib import Path
+import tempfile
+import tkinter as tk
+import traceback
+
+LOG_FILE = "selftest.log"
+
+
+def run(log_path: Path = Path(LOG_FILE)) -> int:
+    lines: list[str] = []
+    try:
+        failed = _run_screens(lines)
+    except Exception:
+        lines.append("FAILED:\n" + traceback.format_exc())
+        failed = True
+    lines.append("RESULT: " + ("FAILED" if failed else "OK"))
+    log_path.write_text("\n".join(lines), encoding="utf-8")
+    return 1 if failed else 0
+
+
+def _run_screens(lines: list[str]) -> bool:
+    from justdoit import config, records, report_service, updates
+
+    try:
+        root = tk.Tk()
+    except tk.TclError as e:
+        # 画面（ディスプレイ）のない環境では確かめられないので、失敗にはしない
+        lines.append(f"SKIPPED: 画面を開けませんでした ({e})")
+        return False
+
+    # 実際の記録・設定や、ネットワークには触れない
+    tmp = Path(tempfile.mkdtemp())
+    config.get_data_dir = lambda: tmp
+    updates.check_for_update = lambda: None
+    report_service.start_sync = lambda: None
+    now = datetime.now()
+    for days, task, minutes in [(40, "古い記録", 30), (6, "制作", 50), (2, "学習", 25), (0, "読書", 20)]:
+        when = (now - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+        records.append_record_to_csv(config.get_csv_path(), when, task, minutes)
+
+    from justdoit.ui import app as app_module, dashboard, history, settings, timer
+
+    errors: list[str] = []
+    root.report_callback_exception = lambda *exc: errors.append("".join(traceback.format_exception(*exc)))
+    app = app_module.JustDoItApp(root)
+    screens = [
+        ("メニュー", app.show_main_menu),
+        ("集中タイマー", lambda: timer.show_focus_timer(app, 25 * 60)),
+        ("記録画面", lambda: timer.show_record_form(app, 25, after_save=app.show_main_menu)),
+        ("休憩タイマー", lambda: timer.show_break_timer(app)),
+        ("手動記録", lambda: timer.show_manual_record(app)),
+        ("振り返り（週）", lambda: dashboard.show_dashboard(app, "week")),
+        ("振り返り（月）", lambda: dashboard.show_dashboard(app, "month")),
+        ("振り返り（年）", lambda: dashboard.show_dashboard(app, "year")),
+        ("記録一覧", lambda: history.show_history(app, back=app.show_main_menu)),
+        ("設定（全般）", lambda: settings.show_settings(app, "timer")),
+        ("設定（週次レポート）", lambda: settings.show_settings(app, "report")),
+    ]
+    for appearance in ("light", "dark"):
+        config.save_preferences(config.Preferences(appearance=appearance))
+        for name, show in screens:
+            before = len(errors)
+            try:
+                show()
+                root.update()
+            except Exception:
+                errors.append(traceback.format_exc())
+            ok = len(errors) == before
+            lines.append(f"[{appearance}] {name}: {'OK' if ok else 'ERROR'}")
+
+    # グラフは matplotlib のフォントなどが同梱されていないと描けないので、描けたかも確かめる
+    dashboard.show_dashboard(app, "week")
+    root.update()
+    if not _find_widgets(root, "Canvas"):
+        errors.append("振り返りのグラフが表示されていません")
+
+    app.close_guard = None
+    root.destroy()
+    lines.extend(errors)
+    return bool(errors)
+
+
+def _find_widgets(widget: tk.Misc, widget_class: str) -> list[tk.Misc]:
+    found = [widget] if widget.winfo_class() == widget_class else []
+    for child in widget.winfo_children():
+        found.extend(_find_widgets(child, widget_class))
+    return found

@@ -6,10 +6,11 @@ import queue
 import threading
 import tkinter as tk
 from tkinter import messagebox
+import traceback
 from typing import Callable
 import webbrowser
 
-from justdoit import config, notify, report_service, updates
+from justdoit import __version__, config, notify, report_service, updates
 from justdoit.records import append_record_to_csv, format_hours_mins, load_records, streak_days, today_minutes
 from justdoit.ui import dashboard, settings, theme, timer
 from justdoit.ui.theme import C, make_back_button, make_button, make_label, make_link
@@ -36,6 +37,8 @@ class JustDoItApp:
             pass
         # 閉じるボタンが押されたら、タイマーや入力の途中か確認してから閉じる
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+        # 画面の処理で予期しないエラーが起きたら、黙って画面が欠けるのではなく、知らせて記録を残す
+        self.root.report_callback_exception = self.report_error
 
         # Windows の表示倍率（125%・150% など）。画面サイズや余白をこの倍率で広げる
         # （Mac は OS が拡大するので 1 のまま）
@@ -52,8 +55,8 @@ class JustDoItApp:
         # 振り返り・設定で最後に選んだタブ（次に開いたときも同じタブで表示する）
         self.dashboard_period = "week"
         self.settings_tab = "timer"
-        # 最初の画面は PC 画面の中央に置き、それ以降は今の位置を保つ
-        self.placed = False
+        # 今のウィンドウの大きさ（最初の画面は PC 画面の中央に置き、それ以降は今の中心を保って大きさを変える）
+        self.window_size: tuple[int, int] | None = None
         # 新しいバージョンが出ていれば、そのリリース（起動時に別スレッドで確かめる）
         self.new_release: updates.Release | None = None
         # 今メインメニューを表示しているか（新しいバージョンが見つかったら表示し直すため）
@@ -133,20 +136,25 @@ class JustDoItApp:
         起動直後はPC画面の中央に置く。はみ出す場合はPC画面内に収まるよう位置を寄せる。
         """
         width, height = self.px(width), self.px(height)
+        # 同じ大きさなら何もしない（設定のタブの切り替えなど。余計な描き直しで画面がちらつかないように）
+        if self.window_size == (width, height):
+            return
         screen_width = self.root.winfo_screenwidth()
         screen_height = self.root.winfo_screenheight()
         # 「表示されているか」では判定しない（配色の切り替えでウィンドウが先に表示されることがあるため）
-        if self.placed:
-            self.root.update_idletasks()
-            center_x = self.root.winfo_x() + self.root.winfo_width() // 2
-            center_y = self.root.winfo_y() + self.root.winfo_height() // 2
+        if self.window_size:
+            # ここで update_idletasks() を呼ぶと、作りかけの画面が先に描かれて表示がちぐはぐになるため、
+            # 大きさは自分で覚えておいた値を使う（位置は利用者が動かすので、Tk から読む）
+            old_width, old_height = self.window_size
+            center_x = self.root.winfo_x() + old_width // 2
+            center_y = self.root.winfo_y() + old_height // 2
         else:
             center_x, center_y = screen_width // 2, screen_height // 2
-            self.placed = True
 
         x = max(0, min(center_x - width // 2, screen_width - width))
         y = max(0, min(center_y - height // 2, screen_height - height))
         self.root.geometry(f"{width}x{height}+{x}+{y}")
+        self.window_size = (width, height)
 
     def bring_to_front(self, on_top: bool) -> None:
         """ウィンドウを最前面に出す / 解除する"""
@@ -155,6 +163,26 @@ class JustDoItApp:
             self.root.deiconify()
             self.root.lift()
             self.root.focus_force()
+
+    def report_error(self, exc_type, exc_value, exc_traceback) -> None:
+        """予期しないエラーの内容を log/error.log に追記し、利用者に知らせる
+
+        配布版は画面だけのアプリで、エラーの内容がどこにも表示されないため、原因を調べられるようにファイルに残す。
+        """
+        details = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+        print(details)
+        log_path = config.get_data_dir() / "log" / "error.log"
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(f"--- {datetime.now():%Y-%m-%d %H:%M:%S}（バージョン {__version__}）\n{details}\n")
+        except OSError:
+            pass
+        messagebox.showerror(
+            "エラー",
+            f"予期しないエラーが起きました。\n\n詳しい内容を次のファイルに保存しました:\n{log_path}",
+            parent=self.root,
+        )
 
     def on_close(self) -> None:
         if self.close_guard and not self.close_guard():

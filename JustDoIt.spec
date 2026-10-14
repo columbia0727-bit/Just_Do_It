@@ -25,9 +25,11 @@ def is_needed_data(dest):
     dest = dest.replace("\\", "/")
     if "mpl-data/sample_data/" in dest:
         return False
-    # 日本語はOSのフォントを使うので、matplotlib のフォントは予備の DejaVu Sans だけ残す
-    if "mpl-data/fonts/" in dest:
-        return dest.endswith("/DejaVuSans.ttf") or dest.endswith("/DejaVuSans-Bold.ttf")
+    # PDF・PostScript への書き出し専用のフォントは使わない
+    # （グラフの表示に使う fonts/ttf は残す。matplotlib は日本語を OS のフォントで描くときも、
+    #   予備のフォント LastResortHE などを必ず読み込むため、削るとグラフが描けなくなる）
+    if "mpl-data/fonts/afm/" in dest or "mpl-data/fonts/pdfcorefonts/" in dest:
+        return False
     return True
 
 

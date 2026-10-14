@@ -54,6 +54,21 @@ jobs:
       # 同梱するもの・しないものは JustDoIt.spec で管理する（ダウンロードを軽くするため）
       - run: pyinstaller --noconfirm JustDoIt.spec
 
+      # ビルドしたアプリで画面を一通り表示して確かめる（同梱するファイルが足りず、配布版だけ動かない事故を防ぐ）
+      - name: Self-test (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          $p = Start-Process dist/JustDoIt/JustDoIt.exe -ArgumentList "--self-test" -Wait -PassThru
+          Get-Content selftest.log -Encoding utf8
+          exit $p.ExitCode
+      - name: Self-test (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          status=0
+          dist/JustDoIt.app/Contents/MacOS/JustDoIt --self-test || status=$?
+          cat selftest.log
+          exit $status
+
       - name: Zip (Windows)
         if: runner.os == 'Windows'
         run: Compress-Archive -Path dist/JustDoIt -DestinationPath ${{ matrix.artifact }}.zip

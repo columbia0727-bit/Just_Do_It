@@ -86,8 +86,11 @@ def px(value: float) -> int:
     return round(value * _scale)
 
 
-def system_prefers_dark() -> bool:
-    """OS がダークモードかどうか（調べられなければライト扱い）"""
+def system_prefers_dark(root: tk.Misc | None = None) -> bool:
+    """OS がダークモードかどうか（調べられなければライト扱い）
+
+    画面を切り替えるたびに呼ぶので、速く調べられる方法を使う。
+    """
     try:
         system = platform.system()
         if system == "Windows":
@@ -99,6 +102,12 @@ def system_prefers_dark() -> bool:
             with key:
                 return winreg.QueryValueEx(key, "AppsUseLightTheme")[0] == 0
         if system == "Darwin":
+            # Tk に聞けばすぐにわかる（別のプログラムを起動しないので、画面の切り替えが遅れない）
+            if root is not None:
+                try:
+                    return root.tk.call("::tk::unsupported::MacWindowStyle", "isdark", root) in (1, "1", True)
+                except tk.TclError:
+                    pass  # 古い Tk には無いので、下の方法で調べる
             result = subprocess.run(
                 ["defaults", "read", "-g", "AppleInterfaceStyle"], capture_output=True, text=True, timeout=2
             )
@@ -108,17 +117,17 @@ def system_prefers_dark() -> bool:
     return False
 
 
-def resolve_mode(appearance: str) -> str:
+def resolve_mode(appearance: str, root: tk.Misc | None = None) -> str:
     """設定（"system" / "light" / "dark"）から、実際に使う "light" / "dark" を決める"""
     if appearance in ("light", "dark"):
         return appearance
-    return "dark" if system_prefers_dark() else "light"
+    return "dark" if system_prefers_dark(root) else "light"
 
 
 def apply_theme(root: tk.Tk, appearance: str) -> bool:
     """配色を切り替える。変わったら True（呼び出し側で画面を作り直す）"""
     global _current_mode
-    mode = resolve_mode(appearance)
+    mode = resolve_mode(appearance, root)
     if mode == _current_mode:
         return False
     _current_mode = mode
