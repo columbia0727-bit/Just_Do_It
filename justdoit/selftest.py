@@ -72,6 +72,7 @@ def _run_screens(lines: list[str]) -> bool:
     app = app_module.JustDoItApp(root)
     screens = [
         ("メニュー", app.show_main_menu),
+        ("初回の案内", app.show_welcome),
         ("集中タイマー", lambda: timer.show_focus_timer(app, 25 * 60)),
         ("記録画面", lambda: timer.show_record_form(app, 25, after_save=app.show_main_menu)),
         ("休憩タイマー", lambda: timer.show_break_timer(app)),

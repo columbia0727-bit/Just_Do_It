@@ -16,6 +16,7 @@ from justdoit.ui import dashboard, settings, theme, timer
 from justdoit.ui.theme import C, make_back_button, make_button, make_label, make_link
 
 MENU_SIZE = (320, 340)
+WELCOME_SIZE = (360, 460)
 
 
 class JustDoItApp:
@@ -70,7 +71,10 @@ class JustDoItApp:
         # 同期が終わったら呼ぶ、今の画面の関数（設定画面が結果を表示するため。画面を切り替えると空にする）
         self.sync_listeners: list[Callable[[sync.SyncResult | None, Exception | None], None]] = []
 
-        self.show_main_menu()
+        if is_first_launch():
+            self.show_welcome()
+        else:
+            self.show_main_menu()
         self.root.deiconify()
         # 前回送れなかった記録を送り、ほかの PC の記録を取り込む
         if report_service.is_registered():
@@ -333,6 +337,60 @@ class JustDoItApp:
                 accent=True,
             ).pack(side="bottom", pady=(0, 10))
         self.on_menu = True
+
+    # ---------- 初めて起動したときの案内 ----------
+    def show_welcome(self) -> None:
+        """使い方を3ステップで示し、そのまま「5分だけやる」を始められるようにする（初回だけ）"""
+        screen = self.make_screen(WELCOME_SIZE)
+        mark_welcomed()
+
+        make_label(screen, "ようこそ", size=18, bold=True).pack(pady=(12, 2))
+        make_label(screen, "やる気が出ないときこそ、まずは5分だけ。", size=11, color=C.muted).pack(pady=(0, 18))
+        steps = tk.Frame(screen, bg=C.bg)
+        steps.pack(fill="x")
+        for number, (title, detail) in enumerate(
+            [
+                ("5分だけやる", "タイマーで5分だけ集中。乗ってきたら、そのまま続けられます"),
+                ("一言で記録", "終わったら、やったことを一言入力して記録"),
+                ("振り返る", "記録はグラフで振り返れます。設定から、週次レポートのメールも受け取れます"),
+            ],
+            start=1,
+        ):
+            row = tk.Frame(steps, bg=C.bg)
+            row.pack(fill="x", pady=(0, 12))
+            make_label(row, str(number), size=14, bold=True, color=C.accent, width=2, anchor="w").pack(
+                side="left", anchor="n", padx=(0, 4)
+            )
+            text = tk.Frame(row, bg=C.bg)
+            text.pack(side="left", fill="x")
+            make_label(text, title, size=12, bold=True).pack(anchor="w")
+            make_label(text, detail, size=10, color=C.muted, wraplength=self.px(250), justify="left").pack(anchor="w")
+
+        def start_now():
+            timer.show_focus_timer(self, timer.FOCUS_SHORT_SECONDS)
+
+        make_link(screen, "メニューを見る", self.show_main_menu).pack(side="bottom", pady=(10, 0))
+        make_button(screen, "5分だけやってみる", start_now, primary=True).pack(side="bottom", fill="x")
+        self.bind_key("<Return>", start_now)
+
+
+def is_first_launch() -> bool:
+    """初めて起動したか（案内をまだ見ておらず、記録も無い。以前のバージョンから更新した人には出さない）"""
+    if config.load_config().get("welcomed"):
+        return False
+    try:
+        return load_records(config.get_csv_path()).empty
+    except (OSError, ValueError):
+        return False
+
+
+def mark_welcomed() -> None:
+    settings_data = config.load_config()
+    settings_data["welcomed"] = True
+    try:
+        config.save_config(settings_data)
+    except OSError:
+        pass  # 保存できなくても、次に起動したときにもう一度案内が出るだけ
 
 
 def today_summary() -> str:
