@@ -89,6 +89,17 @@ class ReportServiceTest(unittest.TestCase):
         self.assertTrue(all(p["token"] == "tok" for p in (added, updated, deleted)))
         self.assertEqual(report_service.load_queue(self.queue_path), [])
 
+    def test_update_with_new_datetime_uses_it_for_new_id(self):
+        original = self.log("制作")
+        item = report_service.make_update(original, "制作", 25, new_datetime="2026-10-11 21:30:00")
+        payload = report_service.build_payload(item, "tok")
+        self.assertEqual(payload["new_datetime"], "2026-10-11 21:30:00")
+        moved = report_service.make_log("2026-10-11 21:30:00", "制作", 25)
+        self.assertEqual(payload["new_id"], report_service.log_id(moved))
+        # 日時を変えていなければ new_datetime は送らない（古いサーバーでも動くように）
+        unchanged = report_service.make_update(original, "読書", 25, new_datetime=original["datetime"])
+        self.assertNotIn("new_datetime", unchanged)
+
     def test_old_queue_items_without_action_are_sent_as_logs(self):
         # 以前のバージョンで積んだ記録（action なし）も、そのまま送れる
         report_service.enqueue_logs(self.queue_path, [self.log("制作")])

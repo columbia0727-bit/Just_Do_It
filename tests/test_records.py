@@ -119,6 +119,23 @@ class EditRecordsTest(unittest.TestCase):
         lines = self.csv_path.read_text(encoding="utf-8-sig").splitlines()
         self.assertEqual(lines, ["壊れた行,x,1分", "2026-10-13 09:00:00,読書,45分"])
 
+    def test_update_can_change_datetime(self):
+        records.update_record(self.csv_path, 0, "制作", 25, recorded_at=datetime(2026, 10, 11, 21, 30))
+        self.assertEqual(self.csv_path.read_text(encoding="utf-8-sig").splitlines()[0], "2026-10-11 21:30:00,制作,25分")
+
+    def test_validate_when(self):
+        now = datetime(2026, 10, 14, 12, 0)
+        self.assertEqual(records.validate_when("2026/10/13", "9:05", now), datetime(2026, 10, 13, 9, 5))
+        # 「-」区切りの日付と、全角の「：」も受け付ける
+        self.assertEqual(records.validate_when("2026-10-14", "12：00", now), datetime(2026, 10, 14, 12, 0))
+        self.assertIn("日付", records.validate_when("10/13", "9:05", now))
+        self.assertIn("時刻", records.validate_when("2026/10/13", "25:00", now))
+        self.assertIn("これから先", records.validate_when("2026/10/14", "12:01", now))
+
+    def test_recent_days(self):
+        days = records.recent_days(datetime(2026, 10, 14).date(), days=3)
+        self.assertEqual([label for _, label in days], ["今日 10/14（水）", "昨日 10/13（火）", "10/12（月）"])
+
     def test_validate_record(self):
         self.assertEqual(records.validate_record(" 制作 ", "25"), ("制作", 25))
         self.assertEqual(records.validate_record("", "25"), "やったことを入力してください")

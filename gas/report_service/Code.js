@@ -241,16 +241,16 @@ function handleLog_(data) {
 }
 
 // アプリの記録一覧で直した記録を、サーバー側でも直す
-// 直す前の記録（id・datetime・task・minutes）で探し、new_task・new_minutes・new_id に書き換える
+// 直す前の記録（id・datetime・task・minutes）で探し、new_datetime（省略時はそのまま）・new_task・new_minutes・new_id に書き換える
 function handleUpdateLog_(data) {
   const userId = authenticate_(data.token);
   const before = parseLog_(data.datetime, data.task, data.minutes);
-  const after = parseLog_(data.datetime, data.new_task, data.new_minutes);
+  const after = parseLog_(data.new_datetime || data.datetime, data.new_task, data.new_minutes);
   const logs = getSheet_("logs");
   const row = findLogRow_(logs, userId, parseLogId_(data.id), before);
   // 見つからない（保存期間を過ぎて削除済み・まだ届いていない等）なら、直すものがないので成功とする
   if (row) {
-    writeTextValues_(logs, row, 3, [escapeFormula_(after.task), after.minutes, parseLogId_(data.new_id)]);
+    writeTextValues_(logs, row, 2, [after.datetime, escapeFormula_(after.task), after.minutes, parseLogId_(data.new_id)]);
   }
   // 直す前の内容の記録は、ほかの PC からも消えるようにする
   markDeleted_(userId, parseLogId_(data.id));

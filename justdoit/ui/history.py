@@ -16,6 +16,7 @@ from justdoit.records import (
     list_records,
     update_record,
     validate_record,
+    validate_when,
 )
 from justdoit.ui.theme import C, make_button, make_entry, make_label, ui_font
 
@@ -111,23 +112,32 @@ class RecordForm:
 
         form = tk.Frame(screen, bg=screen["bg"])
         form.pack(side="bottom", fill="x", pady=(12, 0))
-        make_label(form, "やったこと", size=11).grid(row=0, column=0, sticky="w")
-        make_label(form, "時間（分）", size=11).grid(row=0, column=1, sticky="w", padx=(12, 0))
+        for column, text in enumerate(["やったこと", "日付", "時刻", "時間（分）"]):
+            make_label(form, text, size=11).grid(row=0, column=column, sticky="w", padx=(0 if column == 0 else 10, 0))
         self.task_entry = make_entry(form)
         self.task_entry.grid(row=1, column=0, sticky="ew", ipady=4)
-        self.mins_entry = make_entry(form, width=8)
-        self.mins_entry.grid(row=1, column=1, sticky="w", padx=(12, 0), ipady=4)
+        self.date_entry = make_entry(form, width=10)
+        self.date_entry.grid(row=1, column=1, sticky="w", padx=(10, 0), ipady=4)
+        self.time_entry = make_entry(form, width=6)
+        self.time_entry.grid(row=1, column=2, sticky="w", padx=(10, 0), ipady=4)
+        self.mins_entry = make_entry(form, width=6)
+        self.mins_entry.grid(row=1, column=3, sticky="w", padx=(10, 0), ipady=4)
         form.columnconfigure(0, weight=1)
         self.error_label = make_label(form, size=10, color=C.error)
-        self.error_label.grid(row=2, column=0, columnspan=2, sticky="w")
+        self.error_label.grid(row=2, column=0, columnspan=4, sticky="w")
 
-        self.mins_entry.bind("<Return>", lambda event: self.save())
-        self.task_entry.bind("<Return>", lambda event: self.save())
+        for entry in (self.task_entry, self.date_entry, self.time_entry, self.mins_entry):
+            entry.bind("<Return>", lambda event: self.save())
 
     def load(self, record: Record) -> None:
         self.record = record
         self.error_label.config(text="")
-        for entry, value in [(self.task_entry, record.task), (self.mins_entry, str(record.minutes))]:
+        for entry, value in [
+            (self.task_entry, record.task),
+            (self.date_entry, f"{record.recorded_at:%Y/%m/%d}"),
+            (self.time_entry, f"{record.recorded_at:%H:%M}"),
+            (self.mins_entry, str(record.minutes)),
+        ]:
             entry.delete(0, "end")
             entry.insert(0, value)
 
@@ -139,14 +149,21 @@ class RecordForm:
         if isinstance(result, str):
             self.error_label.config(text=result)
             return
+        when = validate_when(self.date_entry.get(), self.time_entry.get())
+        if isinstance(when, str):
+            self.error_label.config(text=when)
+            return
         task, minutes = result
         record = self.record
-        if (task, minutes) == (record.task, record.minutes):
+        # 日時は分の単位で入力するので、秒は元の記録のものを残す（日時を変えていなければ同じ記録のまま）
+        when = when.replace(second=record.recorded_at.second)
+        if (task, minutes, when) == (record.task, record.minutes, record.recorded_at):
             self.on_changed()  # 何も変わっていない
             return
+        new_datetime = when.strftime(DATETIME_FORMAT)
         self.apply(
-            lambda: update_record(self.csv_path, record.row_index, task, minutes),
-            report_service.make_update(report_log(record), task, minutes),
+            lambda: update_record(self.csv_path, record.row_index, task, minutes, recorded_at=when),
+            report_service.make_update(report_log(record), task, minutes, new_datetime=new_datetime),
         )
 
     def delete(self) -> None:

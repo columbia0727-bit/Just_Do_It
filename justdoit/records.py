@@ -111,6 +111,40 @@ def validate_record(task: str, minutes_text: str) -> tuple[str, int] | str:
     return task, int(minutes_text)
 
 
+WEEKDAY_NAMES = "月火水木金土日"
+RECENT_DAYS = 31  # 手動記録で選べる日付（今日から何日前まで）
+
+
+def recent_days(today: date, days: int = RECENT_DAYS) -> list[tuple[date, str]]:
+    """手動記録の日付の選択肢。今日から新しい順に（日付, 表示）を返す（例: 「今日 10/14（水）」）"""
+    result = []
+    for offset in range(days):
+        day = today - timedelta(days=offset)
+        label = f"{day.month}/{day.day}（{WEEKDAY_NAMES[day.weekday()]}）"
+        prefix = {0: "今日 ", 1: "昨日 "}.get(offset, "")
+        result.append((day, prefix + label))
+    return result
+
+
+def validate_when(date_text: str, time_text: str, now: datetime | None = None) -> datetime | str:
+    """入力された日付（2026/10/14・2026-10-14）と時刻（9:05・09:05）を確かめて日時を返す。
+    正しくなければエラーメッセージを返す（これから先の日時も受け付けない）"""
+    now = now or datetime.now()
+    date_text, time_text = date_text.strip().replace("-", "/"), time_text.strip().replace("：", ":")
+    try:
+        day = datetime.strptime(date_text, "%Y/%m/%d").date()
+    except ValueError:
+        return "日付は 2026/10/14 のように入力してください"
+    try:
+        clock = datetime.strptime(time_text, "%H:%M").time()
+    except ValueError:
+        return "時刻は 9:05 のように入力してください"
+    when = datetime.combine(day, clock)
+    if when > now:
+        return "これから先の日時は記録できません"
+    return when
+
+
 # ==========================================
 # 記録の一覧・修正・削除（CSV の行をそのまま扱う）
 # ==========================================
@@ -138,9 +172,14 @@ def list_records(csv_path: Path) -> list[Record]:
     return sorted(result, key=lambda r: (r.recorded_at, r.row_index), reverse=True)
 
 
-def update_record(csv_path: Path, row_index: int, task: str, minutes: int) -> None:
+def update_record(
+    csv_path: Path, row_index: int, task: str, minutes: int, recorded_at: datetime | None = None
+) -> None:
+    """記録を直す（recorded_at を渡すと日時も直す）"""
     rows = read_rows(csv_path)
     rows[row_index][1:3] = [task, f"{minutes}分"]
+    if recorded_at is not None:
+        rows[row_index][0] = recorded_at.strftime(DATETIME_FORMAT)
     write_rows(csv_path, rows)
 
 

@@ -93,6 +93,17 @@
     assertEqual(gas.rows("deleted").map((row) => row[1][0]), ["a", "e", "b", "9"], "消した（直す前の）ID が残っていない");
   });
 
+  test("記録の修正で、日時も直せる（new_datetime を省略すると日時はそのまま）", (code) => {
+    const gas = global.GasTest.createEnv(code);
+    const token = gas.signUp("me@example.com");
+    gas.post({ action: "log", token, datetime: "2026-10-14 09:00:00", task: "制作", minutes: 25, id: id("a") });
+    gas.post({ action: "update_log", token, id: id("a"), datetime: "2026-10-14 09:00:00", task: "制作", minutes: 25,
+      new_datetime: "2026-10-13 21:30:00", new_task: "制作", new_minutes: 25, new_id: id("b") });
+    assertEqual(gas.rows("logs").map((row) => [row[1], row[4]]), [["2026-10-13 21:30:00", id("b")]]);
+    assertEqual(gas.post({ action: "update_log", token, id: id("b"), datetime: "2026-10-13 21:30:00", task: "制作",
+      minutes: 25, new_datetime: "あした", new_task: "制作", new_minutes: 25, new_id: id("c") }).code, "invalid");
+  });
+
   // ==========================================
   // 同期
   // ==========================================

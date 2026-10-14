@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 from PIL import ImageTk
 
 from justdoit import config
-from justdoit.records import load_records, recent_tasks, validate_record
+from justdoit.records import load_records, recent_days, recent_tasks, validate_record, validate_when
 from justdoit.ui.theme import (
     C,
     make_back_button,
@@ -20,6 +20,7 @@ from justdoit.ui.theme import (
     make_entry,
     make_label,
     make_link,
+    make_select,
     px,
     ring_image,
     ui_font,
@@ -31,6 +32,7 @@ if TYPE_CHECKING:
 FOCUS_SHORT_SECONDS = 5 * 60
 TIMER_SIZE = (320, 420)
 RECORD_FORM_SIZE = (320, 400)
+MANUAL_RECORD_SIZE = (380, 440)
 CONTENT_WIDTH = 272  # 画面の幅から左右の余白を引いた幅
 RING_SIZE = 210
 RING_THICKNESS = 7
@@ -168,7 +170,7 @@ def show_record_form(
     app.close_guard = lambda: confirm_discard(app, task_entry)
 
 
-def make_task_input(app: JustDoItApp, screen: tk.Frame) -> tk.Entry:
+def make_task_input(app: JustDoItApp, screen: tk.Frame, content_width: int = CONTENT_WIDTH) -> tk.Entry:
     """作業内容の入力欄と、その下の「最近やったこと」の候補（押すと入力欄に入る）"""
     task_entry = make_entry(screen)
     task_entry.pack(fill="x", ipady=4)
@@ -185,7 +187,7 @@ def make_task_input(app: JustDoItApp, screen: tk.Frame) -> tk.Entry:
             task_entry.insert(0, task)
             task_entry.focus_set()
 
-        make_chips(screen, tasks, fill, max_width=app.px(CONTENT_WIDTH)).pack(anchor="w", pady=(6, 0))
+        make_chips(screen, tasks, fill, max_width=app.px(content_width)).pack(anchor="w", pady=(6, 0))
     return task_entry
 
 
@@ -222,18 +224,31 @@ def show_break_timer(app: JustDoItApp) -> None:
 # 手動記録（タイマーを使わなかった作業を後から追加する）
 # ==========================================
 def show_manual_record(app: JustDoItApp) -> None:
-    screen = app.make_screen(RECORD_FORM_SIZE)
+    """タイマーを使わなかった作業を記録する（日付と時刻も選べるので、前の日の作業もあとから記録できる）"""
+    screen = app.make_screen(MANUAL_RECORD_SIZE)
     app.make_header(screen, "記録する")
 
     make_label(screen, "やったこと", size=11).pack(anchor="w", pady=(0, 4))
-    task_entry = make_task_input(app, screen)
+    task_entry = make_task_input(app, screen, content_width=MANUAL_RECORD_SIZE[0] - 48)
 
-    make_label(screen, "時間（分）", size=11).pack(anchor="w", pady=(12, 4))
-    mins_entry = make_entry(screen, width=8)
-    mins_entry.pack(anchor="w", ipady=4)
+    now = datetime.now()
+    days = recent_days(now.date())
+    fields = tk.Frame(screen, bg=screen["bg"])
+    fields.pack(anchor="w", pady=(12, 0))
+    for column, text in enumerate(["日付", "時刻", "時間（分）"]):
+        make_label(fields, text, size=11).grid(row=0, column=column, sticky="w", padx=(0, 10), pady=(0, 4))
+    selected_day = {"index": 0}
+    make_select(fields, [label for _, label in days], 0, lambda index: selected_day.update(index=index)).grid(
+        row=1, column=0, sticky="w", padx=(0, 10)
+    )
+    time_entry = make_entry(fields, width=6)
+    time_entry.insert(0, f"{now:%H:%M}")
+    time_entry.grid(row=1, column=1, sticky="w", padx=(0, 10), ipady=4)
+    mins_entry = make_entry(fields, width=6)
+    mins_entry.grid(row=1, column=2, sticky="w", ipady=4)
 
     error_label = make_label(screen, size=10, color=C.error)
-    error_label.pack(anchor="w")
+    error_label.pack(anchor="w", pady=(4, 0))
 
     def save(event=None):
         result = validate_record(task_entry.get(), mins_entry.get())
@@ -241,7 +256,13 @@ def show_manual_record(app: JustDoItApp) -> None:
             error_label.config(text=result)
             (mins_entry if task_entry.get().strip() else task_entry).focus_set()
             return
-        if app.save_record(*result):
+        day = days[selected_day["index"]][0]
+        when = validate_when(f"{day:%Y/%m/%d}", time_entry.get())
+        if isinstance(when, str):
+            error_label.config(text=when)
+            time_entry.focus_set()
+            return
+        if app.save_record(*result, recorded_at=when):
             app.show_main_menu()
 
     make_button(screen, "記録する", save, primary=True).pack(side="bottom", fill="x")
@@ -249,4 +270,5 @@ def show_manual_record(app: JustDoItApp) -> None:
     # Enterキーで次の欄へ・保存
     task_entry.bind("<Return>", lambda event: mins_entry.focus_set())
     mins_entry.bind("<Return>", save)
+    time_entry.bind("<Return>", save)
     app.close_guard = lambda: confirm_discard(app, task_entry)

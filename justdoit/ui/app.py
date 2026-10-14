@@ -265,9 +265,12 @@ class JustDoItApp:
             self.bring_to_front(True)
 
     # ---------- 記録の保存 ----------
-    def save_record(self, task: str, duration_mins: int) -> bool:
-        """ローカルCSVへの保存 ＆ 週次レポート用の送信。保存できたら True を返す"""
-        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    def save_record(self, task: str, duration_mins: int, recorded_at: datetime | None = None) -> bool:
+        """ローカルCSVへの保存 ＆ 週次レポート用の送信。保存できたら True を返す
+
+        recorded_at を省略すると今の日時で記録する（手動記録では、選んだ日時を渡す）。
+        """
+        now_str = (recorded_at or datetime.now()).strftime("%Y-%m-%d %H:%M:%S")
 
         try:
             append_record_to_csv(config.get_csv_path(), now_str, task, duration_mins)

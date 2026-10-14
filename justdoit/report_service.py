@@ -106,15 +106,19 @@ _sync_lock = threading.Lock()
 
 # キューに積むものは3種類（action が無いものは、以前のバージョンで積んだ「記録の追加」）
 #   記録の追加: {"datetime", "task", "minutes"}
-#   記録の修正: {"action": "update_log", "datetime", "task", "minutes", "new_task", "new_minutes"}
+#   記録の修正: {"action": "update_log", "datetime", "task", "minutes", "new_task", "new_minutes"[, "new_datetime"]}
 #   記録の削除: {"action": "delete_log", "datetime", "task", "minutes"}
 # 修正・削除も追加と同じキューに積むことで、オフライン中に直した場合も順番どおりに反映される
 def make_log(datetime_str: str, task: str, minutes: int) -> dict:
     return {"datetime": datetime_str, "task": task, "minutes": minutes}
 
 
-def make_update(log: dict, new_task: str, new_minutes: int) -> dict:
-    return {"action": "update_log", **log, "new_task": new_task, "new_minutes": new_minutes}
+def make_update(log: dict, new_task: str, new_minutes: int, new_datetime: str | None = None) -> dict:
+    """記録の修正。new_datetime を渡すと日時も直す（省略すると日時はそのまま）"""
+    item = {"action": "update_log", **log, "new_task": new_task, "new_minutes": new_minutes}
+    if new_datetime and new_datetime != log["datetime"]:
+        item["new_datetime"] = new_datetime
+    return item
 
 
 def make_delete(log: dict) -> dict:
@@ -132,7 +136,8 @@ def build_payload(item: dict, token: str) -> dict:
     """キューの1件を、配信サービスへ送る形にする"""
     payload = {"action": "log", **item, "token": token, "id": log_id(item)}
     if payload["action"] == "update_log":
-        payload["new_id"] = log_id(make_log(item["datetime"], item["new_task"], item["new_minutes"]))
+        new_datetime = item.get("new_datetime", item["datetime"])
+        payload["new_id"] = log_id(make_log(new_datetime, item["new_task"], item["new_minutes"]))
     return payload
 
 
