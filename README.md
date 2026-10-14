@@ -1,5 +1,11 @@
 # Just do it. ⏱️
 
+[![Build](https://github.com/columbia0727-bit/Just_Do_It/actions/workflows/build.yml/badge.svg)](https://github.com/columbia0727-bit/Just_Do_It/actions/workflows/build.yml)
+[![Release](https://img.shields.io/github/v/release/columbia0727-bit/Just_Do_It)](https://github.com/columbia0727-bit/Just_Do_It/releases/latest)
+![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-blue)
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 **「とりあえず5分だけやる」から始める、ポモドーロ＆作業記録アプリ**（Windows / macOS）
 
 やる気が出ないときこそ、まずは5分。タイマーで集中し、終わったら「何をやったか」を一言記録。
@@ -93,6 +99,35 @@ Python などのインストールは不要です。[Releases](../../releases/la
 
 **Q. 不具合が起きたら？**
 予期しないエラーの内容は、保存場所の `log/error.log` に記録されます。
+
+---
+
+## 🏗️ しくみ
+
+```mermaid
+flowchart LR
+    subgraph pcs["利用者の PC（Windows / macOS）"]
+        appA["Just do it.<br/>作業ログ（CSV）"]
+        appB["別の PC の Just do it.<br/>作業ログ（CSV）"]
+    end
+    subgraph google["Google（開発者が用意した配信サービス）"]
+        gas["Apps Script<br/>（Web アプリ）"]
+        sheet[("スプレッドシート<br/>登録・記録")]
+        gmail["Gmail"]
+    end
+    appA -- "記録の送信・同期<br/>（HTTPS・端末ごとのトークン）" --> gas
+    appB -- "記録の送信・同期" --> gas
+    gas <--> sheet
+    gas -- "1時間ごとに、届ける時刻を<br/>過ぎた人へレポート" --> gmail
+    gmail --> mail(["利用者のメール"])
+    releases["GitHub Releases"] -. "新しいバージョンの確認" .-> appA
+```
+
+- **アプリ**（Python・Tkinter）：タイマー・記録・振り返りは PC の中だけで動きます。記録は CSV に保存します。
+- **配信サービス**（Google Apps Script）：週次レポートに登録した人の記録を預かり、レポートのメールを送り、PC 同士の同期の中継をします。
+- **GitHub Actions**：タグを作ると、テスト → Windows・macOS のビルド → 配布版の動作確認 → Releases への添付までを自動で行います。
+
+変更の履歴は [CHANGELOG.md](CHANGELOG.md) にまとめています。
 
 ---
 
