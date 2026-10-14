@@ -141,11 +141,11 @@ def apply_theme(root: tk.Tk, appearance: str) -> bool:
     return True
 
 
-TTK_STYLES = ("TCombobox", "Treeview", "Treeview.Heading", "TScrollbar", "Vertical.TScrollbar")
+TTK_STYLES = ("Treeview", "Treeview.Heading", "TScrollbar", "Vertical.TScrollbar")
 
 
 def _style_ttk(root: tk.Tk) -> None:
-    """ttk の部品（選択欄・表・スクロールバー）を今の配色にする
+    """ttk の部品（記録一覧の表・スクロールバー）を今の配色にする
 
     clam テーマには「フォーカス中は白い文字」のような状態ごとの色が最初から決まっているため、
     configure（通常の色）だけでなく map（状態ごとの色）も、使う状態をすべて今の配色で指定し直す。
@@ -177,30 +177,6 @@ def _style_ttk(root: tk.Tk) -> None:
     )
 
     style.configure(
-        "TCombobox",
-        fieldbackground=C.surface,
-        background=C.surface,
-        foreground=C.text,
-        arrowcolor=C.muted,
-        selectbackground=C.surface,
-        selectforeground=C.text,
-        padding=(px(6), px(3)),
-        **common,
-    )
-    style.map(
-        "TCombobox",
-        # 選んだあともフォーカスが残るので、フォーカス中も普段と同じ色にする
-        foreground=[("disabled", C.muted), ("readonly", "focus", C.text), ("readonly", C.text)],
-        fieldbackground=[("readonly", "focus", C.surface), ("readonly", C.surface)],
-        background=[("active", C.subtle), ("pressed", C.subtle), ("readonly", C.surface)],
-        selectbackground=[("focus", C.surface), ("!focus", C.surface)],
-        selectforeground=[("focus", C.text), ("!focus", C.text)],
-        bordercolor=[("focus", C.accent)],
-        lightcolor=[("focus", C.accent)],
-        arrowcolor=[("disabled", C.border)],
-    )
-
-    style.configure(
         "Treeview", background=C.surface, fieldbackground=C.surface, foreground=C.text, borderwidth=0, **common
     )
     style.map(
@@ -219,18 +195,6 @@ def _style_ttk(root: tk.Tk) -> None:
             background=[("disabled", C.surface), ("pressed", C.subtle_hover), ("active", C.subtle_hover)],
             arrowcolor=[("disabled", C.border)],
         )
-    # 選択欄を開いたときの一覧（ttk ではなく tk の Listbox なので option で指定する）
-    for option, value in [
-        ("background", C.surface),
-        ("foreground", C.text),
-        ("selectBackground", C.accent),
-        ("selectForeground", C.on_accent),
-        ("font", ui_font(11)),
-    ]:
-        root.option_add(f"*TCombobox*Listbox.{option}", value)
-    # 一覧の外枠（初期値は黒っぽい線）
-    root.option_add("*TCombobox*Listbox.highlightThickness", 0)
-    root.option_add("*TCombobox*Listbox.borderWidth", 0)
 
 
 def _set_title_bar_dark(root: tk.Tk, dark: bool) -> None:
@@ -315,7 +279,7 @@ class PillButton(tk.Label):
     """角の丸いボタン。width を省略すると、pack(fill="x") などで広げた幅に合わせて描き直す
 
     kind: "primary"（塗りつぶし・1画面に1つ）/ "secondary"（枠線）/ "chip"（小さな候補）/
-          "tab"・"tab_active"（切り替えタブ）
+          "tab"・"tab_active"（切り替えタブ）/ "select"（選択欄。角丸を小さくして入力欄に似せる）
     マウスを乗せたときはカーソルを変えず、ボタンの色だけを変える（指の形のカーソルは Mac で不自然に見えるため）
     """
 
@@ -333,6 +297,7 @@ class PillButton(tk.Label):
             "chip": (10, 28, False),
             "tab": (10, 28, False),
             "tab_active": (10, 28, True),
+            "select": (11, 32, False),
         }[kind]
         self.fill, self.hover, self.outline, fg = {
             "primary": (C.accent, C.accent_hover, None, C.on_accent),
@@ -340,6 +305,7 @@ class PillButton(tk.Label):
             "chip": (C.subtle, C.subtle_hover, None, C.text),
             "tab": (C.bg, C.subtle, None, C.muted),
             "tab_active": (C.subtle, C.subtle, None, C.text),
+            "select": (C.surface, C.subtle, C.border, C.text),
         }[kind]
         super().__init__(
             parent,
@@ -355,6 +321,7 @@ class PillButton(tk.Label):
             highlightthickness=0,
         )
         self.height = px(height)
+        self.radius = px(8) if kind == "select" else self.height // 2
         self.images: dict[tuple[int, bool], ImageTk.PhotoImage] = {}
         self.hovering = False
         if width is None and kind in ("chip", "tab", "tab_active"):
@@ -375,8 +342,11 @@ class PillButton(tk.Label):
         key = (width, self.hovering)
         if key not in self.images:
             fill = self.hover if self.hovering else self.fill
+            # 背景色は "SystemButtonFace" のような名前のこともあるので、#rrggbb にしてから描く
+            red, green, blue = (value // 256 for value in self.winfo_rgb(self["bg"]))
+            background = f"#{red:02x}{green:02x}{blue:02x}"
             self.images[key] = rounded_rect_image(
-                width, self.height, self.height // 2, fill, background=self["bg"], outline=self.outline
+                width, self.height, self.radius, fill, background=background, outline=self.outline
             )
         self.config(image=self.images[key])
 
@@ -433,19 +403,58 @@ def make_entry(parent: tk.Widget, **options) -> tk.Entry:
     )
 
 
+class SelectButton(PillButton):
+    """選択肢から1つ選ぶ欄。押すと OS 標準のメニューで選択肢を出し、選ばれると on_select(選んだ番号) を呼ぶ
+
+    ttk.Combobox は Mac で描画が遅れて、画面を切り替えたときに選択欄だけ後から表示されるため、
+    ほかのボタンと同じ作り（角丸の画像のラベル）にしている。
+    """
+
+    def __init__(self, parent: tk.Widget, values: list[str], selected: int, on_select: Callable[[int], object]):
+        self.values = values
+        self.index = selected
+        self.on_select = on_select
+        # いちばん長い選択肢が入る幅（▾ と左右の余白のぶんを足す）
+        font = tkfont.Font(font=ui_font(11))
+        width = round(max(font.measure(value) for value in values) / _scale) + 48
+        super().__init__(parent, self.label_text(), self.open_menu, kind="select", width=width)
+
+    def label_text(self) -> str:
+        return f"{self.values[self.index]}   ▾"
+
+    def open_menu(self) -> None:
+        menu = tk.Menu(self, tearoff=0, font=ui_font(11))
+        selected = tk.IntVar(value=self.index)
+        for index, value in enumerate(self.values):
+            menu.add_radiobutton(
+                label=value, variable=selected, value=index, command=lambda index=index: self.choose(index)
+            )
+        try:
+            # 選択欄のすぐ下に開く
+            menu.tk_popup(self.winfo_rootx(), self.winfo_rooty() + self.winfo_height())
+        finally:
+            menu.grab_release()
+
+    def choose(self, index: int) -> None:
+        self.current(index)
+        self.on_select(index)
+
+    def current(self, index: int | None = None) -> int:
+        """選んでいる番号を返す。index を渡すと、その選択肢を選んだ表示にする（on_select は呼ばない）"""
+        if index is not None:
+            self.index = index
+            self.config(text=self.label_text())
+        return self.index
+
+    def get(self) -> str:
+        return self.values[self.index]
+
+
 def make_select(
-    parent: tk.Widget, values: list[str], selected: int, on_select: Callable[[int], object], width: int = 6
-) -> ttk.Combobox:
+    parent: tk.Widget, values: list[str], selected: int, on_select: Callable[[int], object]
+) -> SelectButton:
     """選択肢から1つ選ぶ欄。選ばれると on_select(選んだ番号) を呼ぶ"""
-    box = ttk.Combobox(parent, values=values, width=width, state="readonly", font=ui_font(11))
-    box.current(selected)
-
-    def selected_changed(event):
-        box.selection_clear()  # 選んだ文字が反転表示のまま残らないようにする
-        on_select(box.current())
-
-    box.bind("<<ComboboxSelected>>", selected_changed)
-    return box
+    return SelectButton(parent, values, selected, on_select)
 
 
 def make_checkbox(parent: tk.Widget, text: str, checked: bool, on_change: Callable[[bool], object]) -> tk.Checkbutton:

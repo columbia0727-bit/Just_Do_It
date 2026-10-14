@@ -1,6 +1,7 @@
 """ビルドしたアプリの動作確認（JustDoIt --self-test）
 
-サンプルの記録を一時フォルダに作り、すべての画面を一度ずつ表示して、エラーが起きないかを確かめる。
+HTTPS の通信に使うルート証明書を読み込めるかと、
+サンプルの記録を一時フォルダに作ってすべての画面を一度ずつ表示し、エラーが起きないかを確かめる。
 画面を持つアプリは、ビルドの設定（同梱するファイル）しだいで、ソースから起動したときは動くのに
 配布版だけ動かないことがあるため、GitHub Actions でビルドした直後に Windows・macOS それぞれで実行する。
 結果は selftest.log に書き、問題がなければ終了コード 0、あれば 1 で終わる。
@@ -18,13 +19,29 @@ LOG_FILE = "selftest.log"
 def run(log_path: Path = Path(LOG_FILE)) -> int:
     lines: list[str] = []
     try:
-        failed = _run_screens(lines)
+        failed = _check_certificates(lines)
+        failed = _run_screens(lines) or failed
     except Exception:
         lines.append("FAILED:\n" + traceback.format_exc())
         failed = True
     lines.append("RESULT: " + ("FAILED" if failed else "OK"))
     log_path.write_text("\n".join(lines), encoding="utf-8")
     return 1 if failed else 0
+
+
+def _check_certificates(lines: list[str]) -> bool:
+    """HTTPS の通信に使うルート証明書を読み込めるか（読めないと、週次レポートの登録や更新の確認ができない）
+
+    ネットワークにはつながず、証明書の一覧が読めたかだけを確かめる。
+    """
+    from justdoit import net
+
+    count = net.root_certificate_count()
+    lines.append(f"ルート証明書: {count} 件")
+    if count == 0:
+        lines.append("ルート証明書を読み込めませんでした（HTTPS の通信ができません）")
+        return True
+    return False
 
 
 def _run_screens(lines: list[str]) -> bool:

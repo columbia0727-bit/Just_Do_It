@@ -82,14 +82,10 @@ class ThemeColorsTest(unittest.TestCase):
         return (lighter + 0.05) / (darker + 0.05)
 
     def test_text_is_readable_in_every_state(self):
-        """ライト・ダークそれぞれ、選択欄・表の文字が、どの状態でも背景に対して読める濃さであること"""
+        """ライト・ダークそれぞれ、記録一覧の表の文字が、どの状態でも背景に対して読める濃さであること"""
         style = ttk.Style(self.root)
         cases = [
             # (部品, 状態, 文字の色の項目, 背景の色の項目)
-            ("TCombobox", ["readonly"], "foreground", "fieldbackground"),
-            ("TCombobox", ["readonly", "focus"], "foreground", "fieldbackground"),  # 選んだ直後
-            ("TCombobox", ["readonly", "focus"], "selectforeground", "selectbackground"),
-            ("TCombobox", ["readonly", "!focus"], "selectforeground", "selectbackground"),
             ("Treeview", [], "foreground", "background"),
             ("Treeview", ["selected"], "foreground", "background"),
             ("Treeview.Heading", [], "foreground", "background"),
@@ -122,6 +118,20 @@ class ThemeColorsTest(unittest.TestCase):
                 ratio = self.contrast(getattr(palette, fg), getattr(palette, bg))
                 self.assertGreaterEqual(ratio, minimum, f"[{name}] {fg} / {bg} のコントラスト {ratio:.1f}")
 
+    def test_select_shows_and_changes_choice(self):
+        chosen = []
+        select = theme.make_select(self.root, ["15分", "25分", "50分"], 1, chosen.append)
+        self.assertEqual((select.current(), select.get()), (1, "25分"))
+        self.assertIn("25分", select.cget("text"))
+
+        select.choose(2)  # メニューで「50分」を選んだとき
+        self.assertEqual(chosen, [2])
+        self.assertEqual(select.get(), "50分")
+        self.assertIn("50分", select.cget("text"))
+
+        select.current(0)  # 表示だけ戻す（保存に失敗したときなど）。on_select は呼ばない
+        self.assertEqual((select.get(), chosen), ("15分", [2]))
+
     def test_widgets_use_only_palette_colors(self):
         visible_options = (
             "background", "foreground", "insertbackground", "selectbackground", "selectforeground",
@@ -135,6 +145,7 @@ class ThemeColorsTest(unittest.TestCase):
                 "entry": theme.make_entry(frame),
                 "checkbox": theme.make_checkbox(frame, "x", True, lambda checked: None),
                 "button": theme.make_button(frame, "x", lambda: None),
+                "select": theme.make_select(frame, ["25分", "50分"], 0, lambda index: None),
             }
             for name, widget in widgets.items():
                 values = [

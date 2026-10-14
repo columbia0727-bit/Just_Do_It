@@ -9,7 +9,7 @@ import json
 import re
 import urllib.request
 
-from justdoit import __version__
+from justdoit import __version__, net
 
 LATEST_RELEASE_API = "https://api.github.com/repos/columbia0727-bit/Just_Do_It/releases/latest"
 RELEASES_PAGE = "https://github.com/columbia0727-bit/Just_Do_It/releases/latest"
@@ -46,7 +46,7 @@ def fetch_latest_release() -> Release | None:
     """GitHub の最新リリースを返す（取得できなければ None）。時間がかかるので別スレッドから呼ぶ"""
     request = urllib.request.Request(LATEST_RELEASE_API, headers={"Accept": "application/vnd.github+json"})
     try:
-        with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
+        with net.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
             data = json.loads(response.read().decode("utf-8"))
     except (OSError, ValueError):
         return None

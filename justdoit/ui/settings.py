@@ -130,7 +130,6 @@ def build_timer_section(app: JustDoItApp, screen: tk.Frame) -> None:
         [label for _, label in theme.APPEARANCE_CHOICES],
         [key for key, _ in theme.APPEARANCE_CHOICES].index(prefs.appearance),
         change_appearance,
-        width=16,
     ).grid(row=1, column=1, sticky="w", padx=(12, 0), pady=3)
 
     make_label(rows, "タイマー", bold=True).grid(row=2, column=0, columnspan=2, sticky="w", pady=(16, 0))
@@ -229,14 +228,13 @@ class SchedulePicker:
         make_label(self.frame, "届くタイミング", size=11).pack(side="left", padx=(0, 10))
         weekday, hour = schedule
         self.weekday = make_select(
-            self.frame, [f"{name}曜" for name in report_service.WEEKDAY_NAMES], weekday, self._changed, width=5
+            self.frame, [f"{name}曜" for name in report_service.WEEKDAY_NAMES], weekday, self._changed
         )
         self.hour = make_select(
             self.frame,
             [f"{hour}時" for hour in report_service.REPORT_HOURS],
             report_service.REPORT_HOURS.index(hour),
             self._changed,
-            width=5,
         )
         self.weekday.pack(side="left", padx=(0, 6))
         self.hour.pack(side="left")

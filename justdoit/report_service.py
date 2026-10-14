@@ -14,7 +14,7 @@ import urllib.request
 
 import pandas as pd
 
-from justdoit import config
+from justdoit import config, net
 
 # 開発者がデプロイした gas/report_service/ の WebアプリURL
 # 環境変数 JUSTDOIT_REPORT_URL が設定されていればそちらを優先する
@@ -76,7 +76,7 @@ def post_json(url: str, payload: dict) -> dict:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=TIMEOUT_SECONDS) as res:
+    with net.urlopen(req, timeout=TIMEOUT_SECONDS) as res:
         return json.loads(res.read().decode("utf-8"))
 
 
