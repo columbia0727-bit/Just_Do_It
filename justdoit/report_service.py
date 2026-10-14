@@ -2,17 +2,15 @@
 
 記録は送信待ちキュー（log/report_queue.json）に積んでから別スレッドで送る。
 通信できなかった分はキューに残り、次の記録時・次回起動時に再送される。
+（登録前の記録や、ほかの PC との記録のやり取りは sync.py で行う）
 """
 
-from datetime import datetime, timedelta
 import hashlib
 import json
 import os
 from pathlib import Path
 import threading
 import urllib.request
-
-import pandas as pd
 
 from justdoit import config, net
 
@@ -22,8 +20,6 @@ REPORT_SERVICE_URL = "https://script.google.com/macros/s/AKfycbwsGmQMb4egG6jISjS
 # GAS は起動やロック待ち（最大10秒）で遅れることがあるため、余裕を持たせる
 # （短すぎると、サーバーでは保存済みなのに失敗扱いになって再送してしまう）
 TIMEOUT_SECONDS = 30
-# 登録直後のレポートが空にならないよう、登録時に送る過去の記録の日数
-BACKFILL_DAYS = 14
 
 # レポートが届くタイミング（曜日は 0=月 … 6=日。GAS 側の範囲と合わせる）
 WEEKDAY_NAMES = ["月", "火", "水", "木", "金", "土", "日"]
@@ -165,12 +161,13 @@ def clear_registration() -> None:
         save_queue(config.get_report_queue_path(), [])
 
 
-def sync_queue(url: str, queue_path: Path) -> None:
+def sync_queue(url: str, queue_path: Path, wait: bool = False) -> None:
     """送信待ちの記録（追加・修正・削除）を配信サービスへ順に送る（別スレッドから呼ぶ）
 
     トークンが無効になっていた場合（メールのリンクから配信停止された等）は登録を解除する。
+    ほかのスレッドが送信中なら、wait=False ではそのまま戻り、wait=True ではそれが終わるのを待ってから送る。
     """
-    if not _sync_lock.acquire(blocking=False):
+    if not _sync_lock.acquire(blocking=wait):
         return
     try:
         while True:
@@ -213,13 +210,3 @@ def start_sync() -> None:
         threading.Thread(
             target=sync_queue, args=(get_service_url(), config.get_report_queue_path()), daemon=True
         ).start()
-
-
-def build_backfill_logs(records: pd.DataFrame, days: int = BACKFILL_DAYS, now: datetime | None = None) -> list[dict]:
-    """作業ログの DataFrame から、直近 days 日分を配信サービスへ送る形式に変換する"""
-    start = (now or datetime.now()) - timedelta(days=days)
-    recent = records[(records["日時"] >= start) & (records["分"] > 0)]
-    return [
-        make_log(row.日時.strftime("%Y-%m-%d %H:%M:%S"), row.作業内容, int(row.分))
-        for row in recent.itertuples(index=False)
-    ]

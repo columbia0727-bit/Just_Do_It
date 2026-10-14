@@ -127,7 +127,7 @@ class Record:
 def list_records(csv_path: Path) -> list[Record]:
     """読み取れる記録を新しい順に返す（日時が読めない行は飛ばす）"""
     result = []
-    for i, row in enumerate(_read_rows(csv_path)):
+    for i, row in enumerate(read_rows(csv_path)):
         if len(row) < 3:
             continue
         try:
@@ -139,26 +139,29 @@ def list_records(csv_path: Path) -> list[Record]:
 
 
 def update_record(csv_path: Path, row_index: int, task: str, minutes: int) -> None:
-    rows = _read_rows(csv_path)
+    rows = read_rows(csv_path)
     rows[row_index][1:3] = [task, f"{minutes}分"]
-    _write_rows(csv_path, rows)
+    write_rows(csv_path, rows)
 
 
 def delete_record(csv_path: Path, row_index: int) -> None:
-    rows = _read_rows(csv_path)
+    rows = read_rows(csv_path)
     del rows[row_index]
-    _write_rows(csv_path, rows)
+    write_rows(csv_path, rows)
 
 
-def _read_rows(csv_path: Path) -> list[list[str]]:
+def read_rows(csv_path: Path) -> list[list[str]]:
+    """CSV の行をそのまま読む（日時が読めない行も含む。修正・削除・同期で使う）"""
     if not csv_path.exists():
         return []
     with open(csv_path, newline="", encoding="utf-8-sig") as f:
         return [row for row in csv.reader(f)]
 
 
-def _write_rows(csv_path: Path, rows: list[list[str]]) -> None:
+def write_rows(csv_path: Path, rows: list[list[str]]) -> None:
+    """CSV をまるごと書き直す"""
     # 書き込み途中でアプリが終了しても作業ログが壊れないよう、一時ファイルから置き換える
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = csv_path.with_suffix(".tmp")
     with open(tmp_path, "w", newline="", encoding="utf-8-sig") as f:
         csv.writer(f).writerows(rows)

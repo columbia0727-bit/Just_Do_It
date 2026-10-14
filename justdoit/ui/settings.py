@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING, Callable
 import webbrowser
 
 from justdoit import __version__, config, report_service
-from justdoit.records import load_records
 from justdoit.report_service import ReportServiceError
 from justdoit.ui import theme
 from justdoit.ui.theme import (
@@ -199,10 +198,19 @@ def build_report_section(app: JustDoItApp, frame: tk.Frame) -> None:
         status.pack(anchor="w")
         # 最初のレポートを待たずに、届くか・どんな内容かをその場で確かめられるようにする
         make_button(frame, "テストメールを送る", lambda: send_test_report(app, status)).pack(fill="x", pady=(8, 0))
+        build_sync_section(app, frame)
         # 配信停止は押し間違えないよう、目立たない文字のボタンにする（押すと確認が出る）
         make_link(frame, "配信を停止する", lambda: unregister(app)).pack(anchor="e", pady=(12, 0))
         return
 
+    make_label(
+        frame,
+        "登録すると、同じメールアドレスで登録したほかの PC と記録を同期できます。",
+        size=10,
+        color=C.muted,
+        wraplength=app.px(TEXT_WIDTH),
+        justify="left",
+    ).pack(anchor="w", pady=(0, 8))
     picker = SchedulePicker(app, frame, report_service.get_schedule(settings))
     picker.frame.pack(anchor="w", pady=(0, 8))
     make_label(frame, "メールアドレス", size=11).pack(anchor="w", pady=(0, 4))
@@ -215,6 +223,49 @@ def build_report_section(app: JustDoItApp, frame: tk.Frame) -> None:
 
     make_button(frame, "確認コードを送る", on_register, primary=True).pack(fill="x", pady=(8, 0))
     email_entry.bind("<Return>", on_register)
+
+
+def build_sync_section(app: JustDoItApp, frame: tk.Frame) -> None:
+    """ほかの PC との同期（起動時にも自動で行う。ここでは結果の表示と「今すぐ同期」）"""
+    make_label(frame, "ほかの PC との同期", bold=True).pack(anchor="w", pady=(20, 2))
+    status = make_label(
+        frame, sync_status_text(app), size=10, color=C.muted, wraplength=app.px(TEXT_WIDTH), justify="left"
+    )
+    status.pack(anchor="w")
+
+    def on_synced(result, error):
+        if error:
+            status.config(text=f"同期できませんでした（{error}）")
+        else:
+            # 届くタイミングをほかの PC で変えていた場合にも表示が合うよう、画面ごと作り直す
+            show_settings(app)
+
+    # 起動時・登録直後の同期が終わったときも、この画面にいればここに結果を出す
+    app.sync_listeners.append(on_synced)
+
+    def sync_now():
+        if not app.syncing:
+            status.config(text="同期しています…")
+            app.sync_records()
+
+    make_button(frame, "今すぐ同期", sync_now).pack(fill="x", pady=(6, 0))
+
+
+def sync_status_text(app: JustDoItApp) -> str:
+    if app.syncing:
+        return "同期しています…"
+    if not app.last_sync:
+        return "同じメールアドレスで登録したほかの PC と、記録をそろえます。"
+    synced_at, result = app.last_sync
+    changes = []
+    if result.added:
+        changes.append(f"{result.added}件取り込み")
+    if result.removed:
+        changes.append(f"{result.removed}件削除")
+    if result.pushed:
+        changes.append(f"{len(result.pushed)}件送信")
+    detail = "・".join(changes) if changes else "変更なし"
+    return f"最後に同期: {synced_at:%m/%d %H:%M}（{detail}）"
 
 
 class SchedulePicker:
@@ -346,20 +397,14 @@ def finish_register(app: JustDoItApp, email: str, token: str, schedule: tuple[in
         messagebox.showerror("保存エラー", f"設定を保存できませんでした:\n{e}", parent=app.root)
         return
 
-    # 登録前の記録も送っておき、最初のレポートから中身が入るようにする
-    csv_path = config.get_csv_path()
-    if csv_path.exists():
-        try:
-            report_service.enqueue_logs(
-                config.get_report_queue_path(), report_service.build_backfill_logs(load_records(csv_path))
-            )
-        except (OSError, ValueError) as e:
-            print(f"⚠️ 過去の記録を送信できませんでした: {e}")
-    report_service.start_sync()
+    # 登録前の記録を送り（最初のレポートから中身が入るように）、
+    # 同じアドレスで登録済みのほかの PC の記録があれば取り込む
+    app.sync_records()
 
     messagebox.showinfo(
         "登録完了",
-        f"登録が完了しました。\n{report_service.format_schedule(*schedule)}、1週間の振り返りレポートがメールで届きます。",
+        f"登録が完了しました。\n{report_service.format_schedule(*schedule)}、1週間の振り返りレポートがメールで届きます。\n"
+        "同じメールアドレスで登録したほかの PC とは、記録が自動で同期されます。",
         parent=app.root,
     )
     show_settings(app)

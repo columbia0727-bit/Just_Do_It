@@ -10,7 +10,7 @@ import traceback
 from typing import Callable
 import webbrowser
 
-from justdoit import __version__, config, notify, report_service, updates
+from justdoit import __version__, config, notify, report_service, sync, updates
 from justdoit.records import append_record_to_csv, format_hours_mins, load_records, streak_days, today_minutes
 from justdoit.ui import dashboard, settings, theme, timer
 from justdoit.ui.theme import C, make_back_button, make_button, make_label, make_link
@@ -59,32 +59,84 @@ class JustDoItApp:
         self.window_size: tuple[int, int] | None = None
         # 新しいバージョンが出ていれば、そのリリース（起動時に別スレッドで確かめる）
         self.new_release: updates.Release | None = None
-        # 今メインメニューを表示しているか（新しいバージョンが見つかったら表示し直すため）
+        # 今メインメニューを表示しているか（新しいバージョン・ほかの PC の記録が届いたら表示し直すため）
         self.on_menu = False
+        # ほかの PC との同期（同期中か、最後に同期した時刻と結果）
+        self.syncing = False
+        self.last_sync: tuple[datetime, sync.SyncResult] | None = None
+        # 同期が終わったら呼ぶ、今の画面の関数（設定画面が結果を表示するため。画面を切り替えると空にする）
+        self.sync_listeners: list[Callable[[sync.SyncResult | None, Exception | None], None]] = []
 
         self.show_main_menu()
         self.root.deiconify()
-        # 前回送れなかった記録があれば再送する
-        report_service.start_sync()
+        # 前回送れなかった記録を送り、ほかの PC の記録を取り込む
+        if report_service.is_registered():
+            self.sync_records()
         self.start_update_check()
 
-    def start_update_check(self) -> None:
-        """新しいバージョンが出ているかを別スレッドで確かめ、見つかればメニューに知らせを出す"""
+    def run_in_background(self, work: Callable[[], object], on_done: Callable[[object, Exception | None], None]):
+        """時間のかかる処理（通信）を別スレッドで行い、終わったら on_done(結果, エラー) を画面のスレッドで呼ぶ"""
         results: queue.SimpleQueue = queue.SimpleQueue()
-        threading.Thread(target=lambda: results.put(updates.check_for_update()), daemon=True).start()
+
+        def worker():
+            try:
+                results.put((work(), None))
+            except Exception as error:  # どんなエラーも、画面のスレッドで on_done に渡して扱う
+                results.put((None, error))
 
         # Tk は別スレッドから触れないため、結果はキュー経由で受け取る
         # （画面を切り替えても止まらないよう、schedule ではなく root.after を使う）
         def wait_result():
             try:
-                self.new_release = results.get_nowait()
+                result, error = results.get_nowait()
             except queue.Empty:
-                self.root.after(500, wait_result)
+                self.root.after(200, wait_result)
                 return
-            if self.new_release and self.on_menu:
+            on_done(result, error)
+
+        threading.Thread(target=worker, daemon=True).start()
+        wait_result()
+
+    def start_update_check(self) -> None:
+        """新しいバージョンが出ているかを別スレッドで確かめ、見つかればメニューに知らせを出す"""
+
+        def on_done(release, error):
+            self.new_release = release
+            if release and self.on_menu:
                 self.show_main_menu()
 
-        wait_result()
+        self.run_in_background(updates.check_for_update, on_done)
+
+    def sync_records(self) -> None:
+        """ほかの PC と記録を同期する（通信は別スレッド、手元の記録の書き換えは画面のスレッドで行う）
+
+        結果は sync_listeners に登録した今の画面の関数に知らせる。
+        """
+        if self.syncing:
+            return
+        self.syncing = True
+
+        def finished(state, error):
+            self.syncing = False
+            result = None
+            if error is None:
+                try:
+                    result = sync.apply(state)
+                    self.last_sync = (datetime.now(), result)
+                except OSError as e:  # 作業ログを Excel で開いているなど
+                    error = e
+            elif getattr(error, "code", None) == "unauthorized":
+                # メールのリンクなどから配信停止されていた
+                report_service.clear_registration()
+            if error:
+                print(f"⚠️ 同期できませんでした: {error}")
+            # ほかの PC の記録が届いたら、メニューの「今日の合計」を表示し直す
+            if result and result.changed and self.on_menu:
+                self.show_main_menu()
+            for listener in list(self.sync_listeners):
+                listener(result, error)
+
+        self.run_in_background(sync.fetch_server_state, finished)
 
     # ---------- 画面の土台 ----------
     def px(self, value: float) -> int:
@@ -99,6 +151,7 @@ class JustDoItApp:
         self.key_bindings = []
         self.close_guard = None
         self.on_menu = False
+        self.sync_listeners = []
         for widget in self.root.winfo_children():
             widget.destroy()
         # 「デバイスに合わせる」のときは、画面を切り替えるたびに OS の設定を確かめて色を合わせる

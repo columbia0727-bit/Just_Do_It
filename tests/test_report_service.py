@@ -1,4 +1,3 @@
-from datetime import datetime
 from pathlib import Path
 import sys
 import tempfile
@@ -8,7 +7,7 @@ import urllib.error
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from justdoit import config, records, report_service  # noqa: E402
+from justdoit import config, report_service  # noqa: E402
 from justdoit.report_service import ReportServiceError  # noqa: E402
 
 
@@ -118,16 +117,6 @@ class ReportServiceTest(unittest.TestCase):
 
         self.assertNotIn("report_token", config.load_config())
         self.assertEqual(report_service.load_queue(self.queue_path), [])
-
-    def test_backfill_includes_only_recent_records(self):
-        csv_path = config.get_csv_path()
-        records.append_record_to_csv(csv_path, "2026-09-01 09:00:00", "古い", 25)
-        records.append_record_to_csv(csv_path, "2026-10-10 09:00:00", "制作", 25)
-
-        logs = report_service.build_backfill_logs(
-            records.load_records(csv_path), days=14, now=datetime(2026, 10, 13)
-        )
-        self.assertEqual(logs, [report_service.make_log("2026-10-10 09:00:00", "制作", 25)])
 
 
 class ScheduleTest(unittest.TestCase):

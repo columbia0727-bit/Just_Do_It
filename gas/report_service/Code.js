@@ -3,6 +3,7 @@
  *
  * 開発者が1つだけデプロイする共用の GAS Webアプリ。
  * 利用者はアプリにメールアドレスを登録するだけで、選んだ曜日・時刻に直近1週間のレポートが届く。
+ * 同じメールアドレスで登録した PC 同士は、記録を同期できる（sync_pull で、その利用者の記録をまとめて返す）。
  *
  * 利用者ごとにトリガーを作るとトリガー数の上限に当たるため、トリガーは「1時間ごと」の1本だけにし、
  * 実行のたびに next_report_at を過ぎた利用者にだけ送る。
@@ -14,6 +15,10 @@
  *   logs   : user_id, datetime, task, minutes, log_id … LOG_RETENTION_DAYS より古い記録は自動削除
  *            log_id はアプリが記録の内容から作るID。再送された同じ記録を二重に保存しないためと、
  *            アプリの記録一覧で直した・消した記録をサーバー側で探すために使う
+ *   deleted: user_id, log_id, deleted_at … 消した（直して別の内容になった）記録の ID。
+ *            同期したときに、ほかの PC に残っている同じ記録も消すために使う
+ *
+ * 記録は、同期とレポートのために LOG_RETENTION_DAYS 日だけ預かる（配信を停止するとすぐに削除する）。
  *
  * @OnlyCurrentDoc  スプレッドシートの権限を、このスクリプトが紐づくシートだけに限定する
  */
@@ -25,6 +30,7 @@ const SHEET_HEADERS = {
   ],
   tokens: ["token_hash", "user_id", "created_at"],
   logs: ["user_id", "datetime", "task", "minutes", "log_id"],
+  deleted: ["user_id", "log_id", "deleted_at"],
 };
 const USER_SCHEDULE_COLUMN = 5; // report_weekday から last_report_at までの4列
 const LOG_ID_COLUMN = 5;
@@ -49,7 +55,9 @@ const MIN_QUOTA_FOR_CODES = 20; // レポート用に残しておく送信枠（
 // テストメール（アプリの設定画面から送る、その場で届くレポート）の回数制限
 const TEST_REPORT_INTERVAL_SECONDS = 10 * 60;
 const MAX_TEST_REPORTS_PER_DAY = 3;
-const LOG_RETENTION_DAYS = 35;
+// 記録を預かる日数。アプリの「年」の振り返り（直近12か月。12か月前の月の1日から、最大で約395日）が
+// 同期した PC でもそろうよう、1年より少し長くする
+const LOG_RETENTION_DAYS = 400;
 const MAX_EMAIL_LENGTH = 200;
 const MAX_TASK_LENGTH = 100;
 const MAX_DURATION_MINUTES = 24 * 60;
@@ -79,6 +87,7 @@ function doPost(e) {
     delete_log: handleDeleteLog_,
     update_schedule: handleUpdateSchedule_,
     send_test_report: handleSendTestReport_,
+    sync_pull: handleSyncPull_,
     unregister: handleUnregister_,
   };
   const handler = handlers[data.action];
@@ -242,6 +251,8 @@ function handleUpdateLog_(data) {
   if (row) {
     writeTextValues_(logs, row, 3, [escapeFormula_(after.task), after.minutes, parseLogId_(data.new_id)]);
   }
+  // 直す前の内容の記録は、ほかの PC からも消えるようにする
+  markDeleted_(userId, parseLogId_(data.id));
   return { status: "success", updated: Boolean(row) };
 }
 
@@ -254,7 +265,54 @@ function handleDeleteLog_(data) {
   if (row) {
     logs.deleteRow(row);
   }
+  // 同期したときに、ほかの PC に残っている同じ記録も消えるようにする
+  markDeleted_(userId, parseLogId_(data.id));
   return { status: "success", deleted: Boolean(row) };
+}
+
+function markDeleted_(userId, logId) {
+  if (logId) {
+    appendTextRow_(getSheet_("deleted"), [userId, logId, nowString_()]);
+  }
+}
+
+// 同期: その利用者の記録・消した記録の ID・届くタイミングをまとめて返す
+// アプリは、これを手元の記録と突き合わせて、足りない記録を加え、消された記録を消す
+function handleSyncPull_(data) {
+  const userId = authenticate_(data.token);
+  const logs = getSheetRows_(getSheet_("logs"))
+    .filter((row) => String(row[0]) === userId)
+    .map(logForSync_)
+    .filter((log) => log !== null);
+  const deleted = getSheetRows_(getSheet_("deleted"))
+    .filter((row) => String(row[0]) === userId)
+    .map((row) => String(row[1]));
+
+  const users = getSheet_("users");
+  const row = findRow_(users, 1, userId);
+  const saved = users.getRange(row, USER_SCHEDULE_COLUMN, 1, 2).getValues()[0];
+  const schedule = normalizeSchedule_(saved[0], saved[1]);
+  return {
+    status: "success",
+    logs: logs,
+    deleted: deleted,
+    weekday: schedule.weekday,
+    hour: schedule.hour,
+    retention_days: LOG_RETENTION_DAYS,
+  };
+}
+
+// logs シートの1行を、アプリと同じ形の記録にする（ID のない古い記録は、アプリと同じ計算で ID を作る）
+function logForSync_(row) {
+  const date = parseLogDate_(row[1]);
+  const minutes = Number(row[3]);
+  if (date === null || !(minutes >= 1)) {
+    return null;
+  }
+  const datetime = formatDateTime_(date);
+  const task = unescapeFormula_(String(row[2]));
+  const id = String(row[LOG_ID_COLUMN - 1] || "") || sha256Hex_(datetime + "|" + task + "|" + minutes).slice(0, 32);
+  return { datetime: datetime, task: task, minutes: minutes, id: id };
 }
 
 // アプリから送られた記録（日時・作業内容・時間）を検証する
@@ -761,17 +819,21 @@ function deactivateUser_(userId) {
   }
   keepRows_(getSheet_("tokens"), (r) => String(r[1]) !== userId);
   keepRows_(getSheet_("logs"), (r) => String(r[0]) !== userId);
+  keepRows_(getSheet_("deleted"), (r) => String(r[0]) !== userId);
 }
 
+// 預かる日数を過ぎた記録と、消した記録の ID を削除する
 function purgeOldLogs_() {
   const now = new Date();
   const cutoff = addDays_(new Date(now.getFullYear(), now.getMonth(), now.getDate()), -LOG_RETENTION_DAYS);
-  withLock_(() =>
-    keepRows_(getSheet_("logs"), (r) => {
-      const date = parseLogDate_(r[1]);
-      return date !== null && date >= cutoff;
-    })
-  );
+  const isRecent = (value) => {
+    const date = parseLogDate_(value);
+    return date !== null && date >= cutoff;
+  };
+  withLock_(() => {
+    keepRows_(getSheet_("logs"), (r) => isRecent(r[1]));
+    keepRows_(getSheet_("deleted"), (r) => isRecent(r[2]));
+  });
 }
 
 function unsubscribeUrl_(baseUrl, userId) {
@@ -982,6 +1044,11 @@ function normalizeEmail_(value) {
 // 「=」などで始まる作業内容が数式として解釈されないようにする
 function escapeFormula_(text) {
   return /^[=+\-@]/.test(text) ? "'" + text : text;
+}
+
+// escapeFormula_ で付けた先頭の「'」を外して、アプリで入力したとおりの作業内容に戻す
+function unescapeFormula_(text) {
+  return /^'[=+\-@]/.test(text) ? text.slice(1) : text;
 }
 
 function parseLogDate_(value) {
