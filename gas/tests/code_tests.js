@@ -55,6 +55,51 @@
     assertEqual(gas.post({ action: "register", email: "next@example.com" }).status, "success", "次の1時間には送れる");
   });
 
+  test("メールアドレスの変更は、新しいアドレスの確認コードで行い、記録・ほかの PC はそのまま", (code) => {
+    const gas = global.GasTest.createEnv(code);
+    const pc1 = gas.signUp("old@example.com");
+    const pc2 = gas.signUp("old@example.com");
+    gas.post({ action: "log", token: pc1, datetime: "2026-10-13 09:00:00", task: "制作", minutes: 25, id: id("a") });
+
+    gas.post({ action: "register", email: "New@Example.com" });
+    const right = JSON.parse(gas.cache["code:new@example.com"].value).code;
+    const wrong = right === "000000" ? "111111" : "000000";
+    assertEqual(gas.post({ action: "change_email", token: pc1, email: "new@example.com", code: wrong }).code, "invalid_code");
+    assertEqual(gas.post({ action: "change_email", token: "nope", email: "new@example.com", code: right }).code, "unauthorized");
+    assertEqual(
+      gas.post({ action: "change_email", token: pc1, email: "New@Example.com", code: right }),
+      { status: "success", email: "new@example.com" }
+    );
+    assertEqual(gas.rows("users").map((row) => [row[1], row[2]]), [["new@example.com", "active"]]);
+    const pulled = gas.post({ action: "sync_pull", token: pc2 });
+    assertEqual([pulled.email, pulled.logs.length], ["new@example.com", 1], "ほかの PC に新しいアドレス・記録が見えない");
+    gas.post({ action: "send_test_report", token: pc2 });
+    assertEqual(gas.mails[gas.mails.length - 1].to, "new@example.com", "レポートが新しいアドレスに届かない");
+  });
+
+  test("ほかの人が使っているアドレスには変えられず、配信を停止した以前の登録のアドレスには変えられる", (code) => {
+    const gas = global.GasTest.createEnv(code);
+    const me = gas.signUp("me@example.com");
+    gas.signUp("other@example.com");
+    gas.post({ action: "unregister", token: gas.signUp("old@example.com") });
+
+    delete gas.cache["resend:other@example.com"]; // 登録したときの「1分に1回」の制限を外す
+    gas.post({ action: "register", email: "other@example.com" });
+    const otherCode = JSON.parse(gas.cache["code:other@example.com"].value).code;
+    assertEqual(gas.post({ action: "change_email", token: me, email: "other@example.com", code: otherCode }).code, "email_in_use");
+    assertTrue(gas.cache["code:other@example.com"], "使えないアドレスなのに、確認コードを使い切った");
+
+    delete gas.cache["resend:old@example.com"];
+    gas.post({ action: "register", email: "old@example.com" });
+    const oldCode = JSON.parse(gas.cache["code:old@example.com"].value).code;
+    assertEqual(gas.post({ action: "change_email", token: me, email: "old@example.com", code: oldCode }).status, "success");
+    assertEqual(
+      gas.rows("users").map((row) => [row[1], row[2]]),
+      [["old@example.com", "active"], ["other@example.com", "active"]],
+      "配信を停止した以前の登録が残っている"
+    );
+  });
+
   // ==========================================
   // 記録の追加・修正・削除
   // ==========================================

@@ -161,6 +161,16 @@ class FetchAndApplyTest(unittest.TestCase):
             again = sync.apply(state)
         self.assertIsNone(again.schedule_updated)  # すでに同じなら、更新なし
 
+    def test_apply_follows_email_changed_on_other_pc(self):
+        schedule = report_service.get_schedule(config.load_config())
+        with mock.patch.object(report_service, "start_sync"):
+            result = sync.apply(sync.ServerState([], set(), schedule, 400, email="new@example.com"))
+            old_server = sync.apply(sync.ServerState([], set(), schedule, 400))  # アドレスを返さない古いサーバー
+        self.assertEqual(result.email_updated, "new@example.com")
+        self.assertIsNone(old_server.email_updated)
+        self.assertEqual(config.load_config()["report_email"], "new@example.com")
+        self.assertEqual(config.load_config()["report_token"], "tok")
+
 
 if __name__ == "__main__":
     unittest.main()

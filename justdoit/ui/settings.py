@@ -195,7 +195,10 @@ def build_report_section(app: JustDoItApp, frame: tk.Frame) -> None:
 
     settings = config.load_config()
     if settings.get("report_token"):
-        make_label(frame, f"登録中: {settings.get('report_email', '')}", size=11).pack(anchor="w")
+        registered = tk.Frame(frame, bg=frame["bg"])
+        registered.pack(fill="x")
+        make_label(registered, f"登録中: {settings.get('report_email', '')}", size=11).pack(side="left")
+        make_link(registered, "変更", lambda: change_email(app)).pack(side="left", padx=(8, 0))
         # 登録後は、選び直すとすぐサーバーに反映する
         status = make_label(frame, size=10, color=C.muted, wraplength=app.px(TEXT_WIDTH), justify="left")
         picker = SchedulePicker(app, frame, report_service.get_schedule(settings))
@@ -297,6 +300,8 @@ def sync_status_text(app: JustDoItApp) -> str:
         changes.append(f"{len(result.pushed)}件送信")
     if result.schedule_updated:
         changes.append(f"届くタイミングを{report_service.format_schedule(*result.schedule_updated)}に更新")
+    if result.email_updated:
+        changes.append("メールアドレスを更新")
     detail = "・".join(changes) if changes else "変更なし"
     return f"最後に同期: {synced_at:%m/%d %H:%M}（{detail}）"
 
@@ -394,6 +399,17 @@ def register(app: JustDoItApp, email: str, schedule: tuple[int, int]) -> None:
 
 
 def ask_verify_code(app: JustDoItApp, email: str, schedule: tuple[int, int]) -> None:
+    def on_verified(result: dict) -> None:
+        # サーバーに保存されたタイミングを使う（返ってこない古いサーバーなら、選んだタイミング）
+        saved = (result.get("weekday", schedule[0]), result.get("hour", schedule[1]))
+        finish_register(app, email, result["token"], saved)
+
+    weekday, hour = schedule
+    send_with_code(app, email, {"action": "verify", "email": email, "weekday": weekday, "hour": hour}, on_verified)
+
+
+def send_with_code(app: JustDoItApp, email: str, payload: dict, on_success: Callable[[dict], None]) -> None:
+    """email に届いた確認コードを入力してもらい、payload に付けて送る（打ち間違えたら、その場で入力し直せる）"""
     code = simpledialog.askstring(
         "確認コード",
         f"{email} に届いた6桁の確認コードを入力してください。\n（迷惑メールフォルダに届く場合があります）",
@@ -402,23 +418,15 @@ def ask_verify_code(app: JustDoItApp, email: str, schedule: tuple[int, int]) -> 
     if code is None:
         return
 
-    def on_verified(result, error):
+    def on_done(result, error):
         if error:
             messagebox.showerror("確認エラー", str(error), parent=app.root)
-            # コードの打ち間違いは、その場で入力し直せるようにする
             if error.code == "invalid_code":
-                ask_verify_code(app, email, schedule)
+                send_with_code(app, email, payload, on_success)
             return
-        # サーバーに保存されたタイミングを使う（返ってこない古いサーバーなら、選んだタイミング）
-        saved = (result.get("weekday", schedule[0]), result.get("hour", schedule[1]))
-        finish_register(app, email, result["token"], saved)
+        on_success(result)
 
-    weekday, hour = schedule
-    call_service_async(
-        app,
-        {"action": "verify", "email": email, "code": code.strip(), "weekday": weekday, "hour": hour},
-        on_verified,
-    )
+    call_service_async(app, {**payload, "code": code.strip()}, on_done)
 
 
 def finish_register(app: JustDoItApp, email: str, token: str, schedule: tuple[int, int]) -> None:
@@ -443,6 +451,57 @@ def finish_register(app: JustDoItApp, email: str, token: str, schedule: tuple[in
         parent=app.root,
     )
     show_settings(app)
+
+
+# ==========================================
+# メールアドレスの変更（新しいアドレス → 確認コード → 変更完了）
+# ==========================================
+def change_email(app: JustDoItApp) -> None:
+    """登録中のメールアドレスを変える（記録・届くタイミング・ほかの PC の登録はそのまま引き継ぐ）"""
+    if app.busy:
+        return
+    current = config.load_config().get("report_email", "")
+    new_email = simpledialog.askstring(
+        "メールアドレスを変更",
+        f"新しいメールアドレスを入力してください。\n（今のアドレス: {current}）\n\n"
+        "記録・届くタイミング・ほかの PC の登録は、そのまま引き継がれます。",
+        parent=app.root,
+    )
+    if new_email is None:
+        return
+    new_email = new_email.strip()
+    if "@" not in new_email:
+        messagebox.showwarning("入力エラー", "メールアドレスを入力してください。", parent=app.root)
+        return
+    if new_email.lower() == current.lower():
+        messagebox.showinfo("メールアドレスを変更", "今と同じメールアドレスです。", parent=app.root)
+        return
+    token = config.load_config().get("report_token")
+
+    def on_changed(result: dict) -> None:
+        settings_data = config.load_config()
+        settings_data["report_email"] = result.get("email", new_email)
+        try:
+            config.save_config(settings_data)
+        except OSError as e:
+            messagebox.showerror("保存エラー", f"設定を保存できませんでした:\n{e}", parent=app.root)
+            return
+        messagebox.showinfo(
+            "変更完了",
+            f"メールアドレスを {settings_data['report_email']} に変更しました。\n"
+            "次の週次レポートから、新しいアドレスに届きます。",
+            parent=app.root,
+        )
+        show_settings(app)
+
+    def on_sent(result, error):
+        if error:
+            messagebox.showerror("送信エラー", str(error), parent=app.root)
+            return
+        send_with_code(app, new_email, {"action": "change_email", "token": token, "email": new_email}, on_changed)
+
+    # 新しいアドレスで受け取れることを、確認コードで確かめてから変える
+    call_service_async(app, {"action": "register", "email": new_email}, on_sent)
 
 
 # ==========================================

@@ -82,6 +82,7 @@ function doPost(e) {
   const handlers = {
     register: handleRegister_,
     verify: handleVerify_,
+    change_email: handleChangeEmail_,
     log: handleLog_,
     update_log: handleUpdateLog_,
     delete_log: handleDeleteLog_,
@@ -164,7 +165,7 @@ function handleRegister_(data) {
     name: "Just do it.",
     subject: "【Just do it.】確認コード: " + code,
     body:
-      "「Just do it.」の週次レポート登録用の確認コードです。\n\n" +
+      "「Just do it.」の週次レポートの登録（メールアドレスの変更）用の確認コードです。\n\n" +
       "確認コード: " + code + "\n\n" +
       "アプリの入力欄にこのコードを入力してください（" + CODE_TTL_SECONDS / 60 + "分間有効）。\n" +
       "心当たりがない場合は、このメールを破棄してください。",
@@ -184,6 +185,16 @@ function generateCode_() {
 function handleVerify_(data) {
   const email = normalizeEmail_(data.email);
   const schedule = parseSchedule_(data, true);
+  consumeCode_(email, data.code);
+
+  const user = activateUser_(email, schedule);
+  const token = Utilities.getUuid().replace(/-/g, "") + Utilities.getUuid().replace(/-/g, "");
+  appendTextRow_(getSheet_("tokens"), [sha256Hex_(token), user.userId, nowString_()]);
+  return { status: "success", token: token, weekday: user.schedule.weekday, hour: user.schedule.hour };
+}
+
+// メールアドレスに送った確認コードを照合する（合っていればコードを使い切る。違えば fail_ で中断する）
+function consumeCode_(email, codeValue) {
   const cache = CacheService.getScriptCache();
   const key = "code:" + email;
   const raw = cache.get(key);
@@ -192,7 +203,7 @@ function handleVerify_(data) {
   }
 
   const pending = JSON.parse(raw);
-  if (String(data.code || "").trim() !== pending.code) {
+  if (String(codeValue || "").trim() !== pending.code) {
     pending.attempts += 1;
     if (pending.attempts >= MAX_CODE_ATTEMPTS) {
       cache.remove(key);
@@ -203,11 +214,32 @@ function handleVerify_(data) {
     fail_("確認コードが正しくありません", "invalid_code");
   }
   cache.remove(key);
+}
 
-  const user = activateUser_(email, schedule);
-  const token = Utilities.getUuid().replace(/-/g, "") + Utilities.getUuid().replace(/-/g, "");
-  appendTextRow_(getSheet_("tokens"), [sha256Hex_(token), user.userId, nowString_()]);
-  return { status: "success", token: token, weekday: user.schedule.weekday, hour: user.schedule.hour };
+// 登録中のメールアドレスを変える（新しいアドレスに register で送った確認コードで、受け取れることを確かめる）
+// 利用者 ID はそのままなので、記録・届くタイミング・ほかの PC の登録は引き継がれる
+function handleChangeEmail_(data) {
+  const userId = authenticate_(data.token);
+  const email = normalizeEmail_(data.email);
+  const users = getSheet_("users");
+  const row = findRow_(users, 1, userId);
+  if (!row) {
+    fail_("認証に失敗しました。設定画面から再登録してください", "unauthorized");
+  }
+
+  // 確認コードを使い切る前に確かめる（使えないアドレスなら、コードを無駄にしない）
+  const other = findRow_(users, 2, email);
+  if (other && other !== row && users.getRange(other, 3).getValue() === "active") {
+    fail_("このメールアドレスは、別の登録で使われています", "email_in_use");
+  }
+  consumeCode_(email, data.code);
+
+  users.getRange(row, 2).setValue(email);
+  // 配信を停止した以前の登録が同じアドレスで残っていたら消す（アドレスで探すときに、こちらが見つかるように）
+  if (other && other !== row) {
+    users.deleteRow(other);
+  }
+  return { status: "success", email: email };
 }
 
 // 届くタイミングを変更する
@@ -295,6 +327,8 @@ function handleSyncPull_(data) {
   const schedule = normalizeSchedule_(saved[0], saved[1]);
   return {
     status: "success",
+    // ほかの PC でメールアドレスを変えた場合に、この PC の表示も合わせる
+    email: String(users.getRange(row, 2).getValue()),
     logs: logs,
     deleted: deleted,
     weekday: schedule.weekday,

@@ -28,6 +28,7 @@ class ServerState:
     deleted: set[str]  # 消した記録の ID
     schedule: tuple[int, int]  # 届くタイミング（曜日, 時）
     retention_days: int  # サーバーが記録を預かる日数
+    email: str = ""  # 登録中のメールアドレス（返さない古いサーバーなら空）
 
 
 @dataclass
@@ -37,6 +38,8 @@ class SyncResult:
     pushed: list[dict] = field(default_factory=list)  # サーバーへ送る、手元にしかない記録
     # ほかの PC で変えた届くタイミングに合わせた場合の、新しいタイミング（曜日, 時）
     schedule_updated: tuple[int, int] | None = None
+    # ほかの PC でメールアドレスを変えた場合の、新しいアドレス
+    email_updated: str | None = None
 
     @property
     def changed(self) -> bool:
@@ -63,6 +66,7 @@ def fetch_server_state() -> ServerState:
         deleted=set(result.get("deleted", [])),
         schedule=(int(result.get("weekday", 0)), int(result.get("hour", 9))),
         retention_days=int(result.get("retention_days", 400)),
+        email=str(result.get("email", "")),
     )
 
 
@@ -112,11 +116,16 @@ def apply(state: ServerState) -> SyncResult:
         report_service.start_sync()
 
     # 届くタイミングは利用者ごとに1つ（あとから変えた PC の値）なので、ほかの PC で変えた値に表示を合わせる
+    # メールアドレスも同じく、ほかの PC で変えた値に合わせる
     settings = config.load_config()
     if report_service.get_schedule(settings) != state.schedule:
         report_service.save_schedule(settings, *state.schedule)
-        config.save_config(settings)
         result.schedule_updated = state.schedule
+    if state.email and settings.get("report_email") != state.email:
+        settings["report_email"] = state.email
+        result.email_updated = state.email
+    if result.schedule_updated or result.email_updated:
+        config.save_config(settings)
     return result
 
 
