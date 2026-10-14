@@ -35,7 +35,9 @@ PERIODS = {
 class PeriodSummary:
     """振り返り画面に表示する、ある期間の集計結果"""
 
-    title: str
+    title: str  # 「直近7日」（今の期間）や「10/1〜10/7」（前の期間）
+    start: date  # 期間の最初の日
+    end: date  # 期間の最後の日
     labels: list[str]  # グラフの横軸（日付 or 月）
     values: list[float]  # グラフの値（unit 単位）
     unit: str  # "分" or "時間"
@@ -252,22 +254,26 @@ def summarize_by_day(records: pd.DataFrame, days: int = 7, today: datetime | Non
     return daily.reindex(index, fill_value=0)
 
 
-def summarize_period(records: pd.DataFrame, period: str, today: datetime | None = None) -> PeriodSummary:
+def summarize_period(
+    records: pd.DataFrame, period: str, today: datetime | None = None, offset: int = 0
+) -> PeriodSummary:
     """振り返りの期間（"week" / "month" / "year"）ごとの集計
 
     week は直近7日・month は直近30日を日別（分）で、year は直近12か月を月別（時間）で返す。
+    offset を 1, 2, … にすると、その数だけ前の期間（前の7日・前の30日・前の12か月）を集計する。
     """
     today_date = (today or datetime.now()).date()
     if period == "year":
-        months = pd.period_range(end=pd.Period(today_date, freq="M"), periods=12, freq="M")
+        last_month = pd.Period(today_date, freq="M") - 12 * offset
+        months = pd.period_range(end=last_month, periods=12, freq="M")
         start = months[0].start_time.date()
+        end = today_date if offset == 0 else last_month.end_time.date()
     else:
-        start = today_date - timedelta(days=PERIODS[period].days - 1)
+        end = today_date - timedelta(days=PERIODS[period].days * offset)
+        start = end - timedelta(days=PERIODS[period].days - 1)
 
-    in_range = _records_between(records, start, today_date)
-    daily = summarize_by_day(
-        in_range, days=(today_date - start).days + 1, today=datetime.combine(today_date, datetime.min.time())
-    )
+    in_range = _records_between(records, start, end)
+    daily = summarize_by_day(in_range, days=(end - start).days + 1, today=datetime.combine(end, datetime.min.time()))
 
     if period == "year":
         monthly = in_range.groupby(in_range["日時"].dt.to_period("M"))["分"].sum().reindex(months, fill_value=0)
@@ -279,8 +285,17 @@ def summarize_period(records: pd.DataFrame, period: str, today: datetime | None 
         values = [int(mins) for mins in daily.values]
         unit = "分"
 
+    if offset == 0:
+        title = PERIODS[period].title
+    elif period == "year":
+        title = f"{start.year}年{start.month}月〜{end.year}年{end.month}月"
+    else:
+        title = f"{start.month}/{start.day}〜{end.month}/{end.day}"
+
     return PeriodSummary(
-        title=PERIODS[period].title,
+        title=title,
+        start=start,
+        end=end,
         labels=labels,
         values=values,
         unit=unit,

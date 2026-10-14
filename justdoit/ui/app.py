@@ -54,6 +54,7 @@ class JustDoItApp:
         self.busy = False
         # 振り返り・設定で最後に選んだタブ（次に開いたときも同じタブで表示する）
         self.dashboard_period = "week"
+        self.dashboard_offset = 0  # 振り返りで、直近から何期間前を見ているか
         self.settings_tab = "timer"
         # 記録一覧で最後に選んだ月（年, 月）。None ならいちばん新しい月
         self.history_month: tuple[int, int] | None = None

@@ -22,7 +22,7 @@ from justdoit.records import (
     summarize_period,
 )
 from justdoit.ui import history, timer
-from justdoit.ui.theme import C, make_button, make_label, make_link, make_tabs
+from justdoit.ui.theme import C, PillButton, make_button, make_label, make_link, make_tabs
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -44,10 +44,16 @@ rcParams["font.sans-serif"] = {
 rcParams["axes.unicode_minus"] = False
 
 
-def show_dashboard(app: JustDoItApp, period: str | None = None) -> None:
-    """ローカルのCSVを読み込んで、選んだ期間（週・月・年）の振り返りを表示する"""
-    if period:
+def show_dashboard(app: JustDoItApp, period: str | None = None, offset: int | None = None) -> None:
+    """ローカルのCSVを読み込んで、選んだ期間（週・月・年）の振り返りを表示する
+
+    offset は何期間前を表示するか（0 が直近。「‹ 前へ」「次へ ›」や ← → キーで動かす）。
+    """
+    if period and period != app.dashboard_period:
         app.dashboard_period = period
+        app.dashboard_offset = 0  # 週・月・年を切り替えたら、直近の期間から
+    if offset is not None:
+        app.dashboard_offset = max(0, offset)
     try:
         records = load_records(config.get_csv_path())
     except Exception as e:
@@ -57,7 +63,7 @@ def show_dashboard(app: JustDoItApp, period: str | None = None) -> None:
         show_empty(app)
         return
 
-    summary = summarize_period(records, app.dashboard_period)
+    summary = summarize_period(records, app.dashboard_period, offset=app.dashboard_offset)
 
     screen = app.make_screen(DASHBOARD_SIZE)
     header = app.make_header(screen, "振り返り")
@@ -67,6 +73,7 @@ def show_dashboard(app: JustDoItApp, period: str | None = None) -> None:
         app.dashboard_period,
         lambda key: show_dashboard(app, key),
     ).pack(side="left", padx=(app.px(20), 0))
+    build_period_nav(app, header, records, summary)
 
     build_stats(screen, summary, records)
 
@@ -81,6 +88,25 @@ def show_dashboard(app: JustDoItApp, period: str | None = None) -> None:
 
     make_link(side, "すべての記録を見る・直す", open_history).pack(side="bottom", anchor="w", pady=(0, 8))
     build_chart(app, body, summary).pack(side="left", fill="both", expand=True)
+
+
+def build_period_nav(app: JustDoItApp, header: tk.Frame, records: pd.DataFrame, summary: PeriodSummary) -> None:
+    """「‹ 前へ」「次へ ›」（← → キーでも動かせる）。直近の期間では「次へ」、記録が無い過去では「前へ」を出さない"""
+    nav = tk.Frame(header, bg=header["bg"])
+    nav.pack(side="left", padx=(app.px(12), 0))
+    has_earlier = records["日時"].min().date() < summary.start
+    has_later = app.dashboard_offset > 0
+
+    def go(step: int) -> None:
+        if (step > 0 and has_earlier) or (step < 0 and has_later):
+            show_dashboard(app, offset=app.dashboard_offset + step)
+
+    if has_earlier:
+        PillButton(nav, "‹ 前へ", lambda: go(1), kind="chip").pack(side="left", padx=(0, app.px(4)))
+    if has_later:
+        PillButton(nav, "次へ ›", lambda: go(-1), kind="chip").pack(side="left")
+    app.bind_key("<Left>", lambda: go(1))
+    app.bind_key("<Right>", lambda: go(-1))
 
 
 def show_empty(app: JustDoItApp) -> None:

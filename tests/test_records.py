@@ -78,6 +78,25 @@ class RecordsTest(unittest.TestCase):
         self.assertEqual(year.values[-1], 0.5)
         self.assertEqual((year.unit, year.total_minutes), ("時間", 120))
 
+    def test_summarize_earlier_periods(self):
+        self.append("2026-08-10 09:00:00", "学習", 20)
+        self.append("2026-08-12 09:00:00", "制作", 30)
+        self.append("2026-08-20 09:00:00", "制作", 25)
+        loaded = records.load_records(self.csv_path)
+        today = datetime(2026, 8, 20)
+
+        week = records.summarize_period(loaded, "week", today=today, offset=1)
+        self.assertEqual((week.title, week.labels[0], week.labels[-1]), ("8/7〜8/13", "8/7", "8/13"))
+        self.assertEqual(week.total_minutes, 50)
+
+        month = records.summarize_period(loaded, "month", today=today, offset=1)
+        self.assertEqual((month.start.isoformat(), month.end.isoformat()), ("2026-06-22", "2026-07-21"))
+
+        previous_year = records.summarize_period(loaded, "year", today=today, offset=1)
+        self.assertEqual(previous_year.title, "2024年9月〜2025年8月")
+        self.assertEqual((previous_year.labels[0], previous_year.labels[-1]), ("9月", "8月"))
+        self.assertEqual(records.summarize_period(loaded, "week", today=today).title, "直近7日")
+
     def test_rows_with_invalid_datetime_are_skipped(self):
         self.csv_path.parent.mkdir(parents=True)
         self.csv_path.write_text(
