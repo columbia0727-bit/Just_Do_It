@@ -152,6 +152,12 @@ class FetchAndApplyTest(unittest.TestCase):
         self.assertEqual(len(result.pushed), 1)
         self.assertEqual(len(report_service.load_queue(config.get_report_queue_path())), 1)
         self.assertEqual(report_service.get_schedule(config.load_config()), (4, 18))
+        # 届くタイミングを合わせたことも結果に残す（設定画面で「変更なし」と表示しないように）
+        self.assertEqual(result.schedule_updated, (4, 18))
+
+        with mock.patch.object(report_service, "start_sync"):
+            again = sync.apply(state)
+        self.assertIsNone(again.schedule_updated)  # すでに同じなら、更新なし
 
 
 if __name__ == "__main__":

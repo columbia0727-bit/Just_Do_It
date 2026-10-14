@@ -65,7 +65,7 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           status=0
-          dist/JustDoIt.app/Contents/MacOS/JustDoIt --self-test || status=$?
+          "dist/Just do it.app/Contents/MacOS/JustDoIt" --self-test || status=$?
           cat selftest.log
           exit $status
 
@@ -74,7 +74,8 @@ jobs:
         run: Compress-Archive -Path dist/JustDoIt -DestinationPath ${{ matrix.artifact }}.zip
       - name: Zip (macOS)
         if: runner.os == 'macOS'
-        run: ditto -c -k --keepParent dist/JustDoIt.app ${{ matrix.artifact }}.zip
+        # アプリ名（Just do it.app）に空白があるので、パスを引用符で囲む
+        run: ditto -c -k --keepParent "dist/Just do it.app" ${{ matrix.artifact }}.zip
 
       - uses: actions/upload-artifact@v7
         with:

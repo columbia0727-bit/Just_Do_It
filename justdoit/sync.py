@@ -35,9 +35,12 @@ class SyncResult:
     added: int = 0  # ほかの PC から取り込んだ記録の数
     removed: int = 0  # ほかの PC で消された記録の数
     pushed: list[dict] = field(default_factory=list)  # サーバーへ送る、手元にしかない記録
+    # ほかの PC で変えた届くタイミングに合わせた場合の、新しいタイミング（曜日, 時）
+    schedule_updated: tuple[int, int] | None = None
 
     @property
     def changed(self) -> bool:
+        """手元の記録が変わったか（メニューの「今日の合計」などを表示し直すため）"""
         return bool(self.added or self.removed)
 
 
@@ -113,6 +116,7 @@ def apply(state: ServerState) -> SyncResult:
     if report_service.get_schedule(settings) != state.schedule:
         report_service.save_schedule(settings, *state.schedule)
         config.save_config(settings)
+        result.schedule_updated = state.schedule
     return result
 
 

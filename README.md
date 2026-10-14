@@ -22,7 +22,7 @@ Python などのインストールは不要です。[Releases](../../releases/la
 | OS | ファイル | 起動のしかた |
 | --- | --- | --- |
 | Windows | `JustDoIt-windows.zip` | 展開して、`JustDoIt` フォルダの中の `JustDoIt.exe` をダブルクリック |
-| macOS | `JustDoIt-macos.zip` | 展開した `JustDoIt.app` を「アプリケーション」フォルダへ移動して起動 |
+| macOS | `JustDoIt-macos.zip` | 展開した `Just do it.app` を「アプリケーション」フォルダへ移動して起動 |
 
 > **初めて起動するときの警告について**
 > コード署名をしていないため、初回だけ OS の警告が出ます。
@@ -30,6 +30,9 @@ Python などのインストールは不要です。[Releases](../../releases/la
 > - **macOS**：一度開こうとしてから、「システム設定」→「プライバシーとセキュリティ」→「このまま開く」
 
 新しいバージョンが出ると、アプリのメニューにお知らせが表示されます。新しい zip で置き換えても、これまでの記録や設定は消えません。
+
+> **macOS で v1.3.0 以前から更新する場合**
+> v1.3.1 からアプリ名が `JustDoIt.app` から `Just do it.app` に変わりました。「アプリケーション」フォルダに残っている古い `JustDoIt.app` は削除してください（記録は別の場所に保存しているので、削除しても消えません）。
 
 ---
 
@@ -164,7 +167,7 @@ pip install -r requirements-dev.txt
 ```bash
 pyinstaller --noconfirm JustDoIt.spec
 ```
-`dist/` にアプリができます（Windows・macOS それぞれの OS 上でビルドします）。できたアプリは、次のコマンドで全画面と通信の準備を確かめられます（結果は `selftest.log`）。
+`dist/` にアプリができます（Windows は `JustDoIt/JustDoIt.exe`、macOS は `Just do it.app`。それぞれの OS 上でビルドします）。表示名は「Just do it.」ですが、ファイル名・記録の保存先フォルダ名は `JustDoIt` のままにしています（Windows は名前の最後の「.」を消してしまうこと、保存先フォルダ名を変えるとこれまでの記録が見つからなくなるため）。できたアプリは、次のコマンドで全画面と通信の準備を確かめられます（結果は `selftest.log`）。
 ```bash
 dist/JustDoIt/JustDoIt.exe --self-test
 ```

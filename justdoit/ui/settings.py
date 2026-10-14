@@ -264,6 +264,8 @@ def sync_status_text(app: JustDoItApp) -> str:
         changes.append(f"{result.removed}件削除")
     if result.pushed:
         changes.append(f"{len(result.pushed)}件送信")
+    if result.schedule_updated:
+        changes.append(f"届くタイミングを{report_service.format_schedule(*result.schedule_updated)}に更新")
     detail = "・".join(changes) if changes else "変更なし"
     return f"最後に同期: {synced_at:%m/%d %H:%M}（{detail}）"
 
