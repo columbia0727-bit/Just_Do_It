@@ -82,8 +82,10 @@ def start_countdown(
 # ==========================================
 # 集中タイマー
 # ==========================================
-def show_focus_timer(app: JustDoItApp, duration_seconds: int) -> None:
+def show_focus_timer(app: JustDoItApp, duration_seconds: int, done_mins: int = 0) -> None:
+    """集中タイマー。done_mins は、続けてやっている場合のそれまでの分（最後にまとめて記録する）"""
     duration_mins = duration_seconds // 60
+    total_mins = done_mins + duration_mins
     screen = app.make_screen(TIMER_SIZE)
 
     # 「ここで終える」と押し間違えないよう、やめる操作は右上に離して置く
@@ -91,20 +93,35 @@ def show_focus_timer(app: JustDoItApp, duration_seconds: int) -> None:
     top.pack(fill="x")
     make_back_button(top, lambda: confirm_quit()).pack(side="right")
 
-    make_label(screen, f"集中（{duration_mins}分）", size=11, color=C.muted).pack()
+    title = f"集中（あと{duration_mins}分・合計{total_mins}分）" if done_mins else f"集中（{duration_mins}分）"
+    make_label(screen, title, size=11, color=C.muted).pack()
     update_clock = make_ring_clock(screen, duration_seconds)
 
     def time_up():
         # 設定画面で選んだ方法で知らせて、そのまま記録画面へ
-        app.notify("集中タイム終了", f"{duration_mins}分おつかれさまでした。やったことを記録しましょう。")
+        # 「5分だけやる」が終わったときは、乗ってきたらそのまま続けられるようにする（このアプリの考え方）
+        focus_minutes = config.load_preferences().focus_minutes
+        can_continue = not done_mins and duration_seconds == FOCUS_SHORT_SECONDS and focus_minutes > duration_mins
+        extra_mins = focus_minutes - duration_mins
+        message = "このまま続けることもできます。" if can_continue else "やったことを記録しましょう。"
+        app.notify("集中タイム終了", f"{total_mins}分おつかれさまでした。{message}")
+
+        def keep_going():
+            show_focus_timer(app, extra_mins * 60, done_mins=total_mins)
+
         show_record_form(
-            app, duration_mins, after_save=lambda: show_break_timer(app), save_text="記録して休憩する"
+            app,
+            total_mins,
+            after_save=lambda: show_break_timer(app),
+            save_text="記録して休憩する",
+            on_continue=keep_going if can_continue else None,
+            continue_text=f"このまま続ける（あと{extra_mins}分）",
         )
 
     def elapsed_mins() -> int:
-        # 1分未満でも最低「1分」として切り上げる
+        # 1分未満でも最低「1分」として切り上げる（続けている場合は、それまでの分も足す）
         elapsed_secs = int((datetime.now() - start).total_seconds())
-        return max(1, (elapsed_secs + 59) // 60)
+        return done_mins + max(1, (elapsed_secs + 59) // 60)
 
     def finish_early():
         # 途中で終えても、そこまでの時間を記録できる
@@ -136,9 +153,17 @@ def show_focus_timer(app: JustDoItApp, duration_seconds: int) -> None:
 
 
 def show_record_form(
-    app: JustDoItApp, duration_mins: int, after_save: Callable[[], None], save_text: str = "記録する"
+    app: JustDoItApp,
+    duration_mins: int,
+    after_save: Callable[[], None],
+    save_text: str = "記録する",
+    on_continue: Callable[[], None] | None = None,
+    continue_text: str = "",
 ) -> None:
-    """やったことを入力して記録する画面（タイマー終了時・途中終了時で共通）"""
+    """やったことを入力して記録する画面（タイマー終了時・途中終了時で共通）
+
+    on_continue を渡すと「このまま続ける」ボタンを出す（記録はせず、続けた分と合わせて最後に記録する）。
+    """
     screen = app.make_screen(RECORD_FORM_SIZE)
 
     make_label(screen, "おつかれさまでした", size=16, bold=True).pack(pady=(16, 0))
@@ -164,8 +189,15 @@ def show_record_form(
         app.bring_to_front(False)
         app.show_main_menu()
 
+    def keep_going():
+        app.bring_to_front(False)
+        if on_continue:
+            on_continue()
+
     make_link(screen, "記録しない", skip).pack(side="bottom", pady=(10, 0))
     make_button(screen, save_text, save, primary=True).pack(side="bottom", fill="x")
+    if on_continue:
+        make_button(screen, continue_text, keep_going).pack(side="bottom", fill="x", pady=(0, 8))
     task_entry.bind("<Return>", save)
     app.close_guard = lambda: confirm_discard(app, task_entry)
 
