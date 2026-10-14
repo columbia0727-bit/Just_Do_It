@@ -109,3 +109,26 @@ def save_preferences(prefs: Preferences) -> None:
     config = load_config()
     config["preferences"] = asdict(prefs)
     save_config(config)
+
+
+# ==========================================
+# エラーの記録（不具合を調べるときに使う）
+# ==========================================
+def get_error_log_path() -> Path:
+    return get_data_dir() / "log" / "error.log"
+
+
+def append_error_log(details: str) -> Path:
+    """エラーの内容を日時とバージョンつきで log/error.log に追記し、そのファイルの場所を返す（書けなくても止めない）"""
+    from datetime import datetime
+
+    from justdoit import __version__
+
+    path = get_error_log_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(f"--- {datetime.now():%Y-%m-%d %H:%M:%S}（バージョン {__version__}）\n{details.rstrip()}\n\n")
+    except OSError:
+        pass
+    return path

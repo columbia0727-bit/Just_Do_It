@@ -10,7 +10,7 @@ from tkinter import messagebox
 import traceback
 import webbrowser
 
-from justdoit import __version__, config, notify, report_service, sync, updates
+from justdoit import config, notify, report_service, sync, updates
 from justdoit.records import append_record_to_csv, format_hours_mins, load_records, streak_days, today_minutes
 from justdoit.ui import dashboard, settings, theme, timer
 from justdoit.ui.theme import C, make_back_button, make_button, make_label, make_link
@@ -224,13 +224,7 @@ class JustDoItApp:
         """
         details = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
         print(details)
-        log_path = config.get_data_dir() / "log" / "error.log"
-        try:
-            log_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(log_path, "a", encoding="utf-8") as f:
-                f.write(f"--- {datetime.now():%Y-%m-%d %H:%M:%S}（バージョン {__version__}）\n{details}\n")
-        except OSError:
-            pass
+        log_path = config.append_error_log(details)
         messagebox.showerror(
             "エラー",
             f"予期しないエラーが起きました。\n\n詳しい内容を次のファイルに保存しました:\n{log_path}",

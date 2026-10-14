@@ -1,4 +1,5 @@
 from pathlib import Path
+import ssl
 import sys
 import tempfile
 import unittest
@@ -40,8 +41,27 @@ class ReportServiceTest(unittest.TestCase):
     def test_call_service_marks_network_errors(self):
         with self.mock_post(side_effect=urllib.error.URLError("offline")):
             with self.assertRaises(ReportServiceError) as ctx:
-                report_service.call_service(self.URL, {})
+                report_service.call_service(self.URL, {"action": "log"})
         self.assertEqual(ctx.exception.code, "network")
+        # 画面には分かりやすい言葉を出し、技術的な内容は detail（error.log 用）に残す
+        self.assertIn("インターネットに接続できませんでした", str(ctx.exception))
+        self.assertIn("URLError", ctx.exception.detail)
+
+    def test_network_error_messages_explain_what_to_do(self):
+        cases = [
+            (urllib.error.URLError(ssl.SSLCertVerificationError("certificate verify failed")), "安全な通信"),
+            (urllib.error.URLError(TimeoutError("timed out")), "応答がありませんでした"),
+            (TimeoutError("timed out"), "応答がありませんでした"),
+            (urllib.error.HTTPError(self.URL, 500, "Server Error", {}, None), "サーバーでエラーが起きました（500）"),
+            (ValueError("Expecting value"), "予期しない応答"),
+            (ConnectionRefusedError("refused"), "インターネットに接続できませんでした"),
+        ]
+        for error, expected in cases:
+            with self.subTest(error=type(error).__name__), self.mock_post(side_effect=error):
+                with self.assertRaises(ReportServiceError) as ctx:
+                    report_service.call_service(self.URL, {})
+                self.assertIn(expected, str(ctx.exception))
+                self.assertNotIn("Error", str(ctx.exception))  # 英語の技術的な言葉を画面に出さない
 
     def test_sync_sends_all_logs_with_token(self):
         report_service.enqueue_logs(self.queue_path, [self.log("制作"), self.log("学習")])

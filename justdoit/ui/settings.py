@@ -245,7 +245,8 @@ def build_sync_section(app: JustDoItApp, frame: tk.Frame) -> None:
 
     def on_synced(result, error):
         if error:
-            status.config(text=f"同期できませんでした（{error}）")
+            log_error(error)
+            status.config(text=f"同期できませんでした。{error_message(error)}")
         else:
             # 届くタイミングをほかの PC で変えていた場合にも表示が合うよう、画面ごと作り直す
             show_settings(app)
@@ -259,6 +260,26 @@ def build_sync_section(app: JustDoItApp, frame: tk.Frame) -> None:
             app.sync_records()
 
     make_button(frame, "今すぐ同期", sync_now).pack(fill="x", pady=(6, 0))
+
+
+def error_message(error: Exception) -> str:
+    """画面に出すエラーの言葉（通信のエラーは、すでに利用者向けの言葉になっている）"""
+    if isinstance(error, ReportServiceError):
+        return str(error)
+    if isinstance(error, OSError):  # 作業ログを書き換えられなかった
+        return "作業ログを書き換えられませんでした。Excel などで開いている場合は、閉じてからもう一度お試しください。"
+    return "予期しないエラーが起きました。"
+
+
+def log_error(error: Exception) -> None:
+    """エラーの技術的な内容を error.log に残す（画面には利用者向けの言葉だけを出すため）"""
+    if isinstance(error, ReportServiceError):
+        # 通信の失敗だけ技術的な内容がある（サーバーが返したエラーは、メッセージがそのまま説明になっている）
+        detail = error.detail
+    else:
+        detail = f"{type(error).__name__}: {error}"
+    if detail:
+        config.append_error_log(detail)
 
 
 def sync_status_text(app: JustDoItApp) -> str:
@@ -341,6 +362,8 @@ def call_service_async(app: JustDoItApp, payload: dict, on_done: OnDone) -> None
     def wait_result():
         try:
             result, error = results.get_nowait()
+            if error:
+                log_error(error)
         except queue.Empty:
             app.root.after(100, wait_result)
             return
@@ -509,6 +532,8 @@ def remove_this_pc(app: JustDoItApp) -> None:
     def on_done(result, error):
         app.busy = False
         app.root.config(cursor="")
+        if error:
+            log_error(error)
         # すでにサーバー側で解除済み（unauthorized）なら、そのままアプリ側も解除する
         if error and getattr(error, "code", None) != "unauthorized":
             messagebox.showerror("解除できませんでした", str(error), parent=app.root)

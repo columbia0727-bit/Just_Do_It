@@ -28,11 +28,15 @@ DEFAULT_SCHEDULE = (0, 9)  # 月曜 9時台
 
 
 class ReportServiceError(Exception):
-    """配信サービスのエラー。code は "network"（通信失敗）や "unauthorized"（トークン無効）など"""
+    """配信サービスのエラー。code は "network"（通信失敗）や "unauthorized"（トークン無効）など
 
-    def __init__(self, message: str, code: str = "error"):
+    メッセージは利用者に見せる言葉。通信の失敗の技術的な内容は detail に入れる（error.log に残すため）。
+    """
+
+    def __init__(self, message: str, code: str = "error", detail: str = ""):
         super().__init__(message)
         self.code = code
+        self.detail = detail
 
 
 def get_service_url() -> str:
@@ -89,7 +93,8 @@ def call_service(url: str, payload: dict) -> dict:
     try:
         result = post_json(url, payload)
     except (OSError, ValueError) as e:
-        raise ReportServiceError(f"サーバーに接続できませんでした: {e}", "network") from e
+        detail = f"{payload.get('action')}: {type(e).__name__}: {e}"
+        raise ReportServiceError(net.friendly_message(e), "network", detail=detail) from e
     if result.get("status") != "success":
         raise ReportServiceError(result.get("message", "不明なエラー"), result.get("code", "error"))
     return result
