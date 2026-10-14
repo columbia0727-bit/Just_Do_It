@@ -15,6 +15,7 @@ venv/
 build/
 dist/
 *.spec
+!JustDoIt.spec
 
 # OS
 .DS_Store

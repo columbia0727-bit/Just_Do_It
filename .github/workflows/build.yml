@@ -1,6 +1,7 @@
 name: Build desktop apps
 
-# v1.0.0 のようなタグを push すると、Windows / macOS 向けアプリをビルドして Release に添付する
+# v1.0.0 のようなタグができると（GitHub の Releases 画面で作成・または push）、
+# テスト後に Windows / macOS 向けアプリをビルドして Release に添付する
 on:
   push:
     tags: ["v*"]
@@ -37,8 +38,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements-dev.txt
-      # アイコンは PNG を渡すと PyInstaller が Pillow で .ico / .icns に変換する
-      - run: pyinstaller --noconfirm --windowed --name JustDoIt --icon assets/icon.png --add-data "assets/icon.png:assets" main.py
+      # 同梱するもの・しないものは JustDoIt.spec で管理する（ダウンロードを軽くするため）
+      - run: pyinstaller --noconfirm JustDoIt.spec
 
       - name: Zip (Windows)
         if: runner.os == 'Windows'

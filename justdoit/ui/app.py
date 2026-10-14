@@ -1,0 +1,246 @@
+"""アプリの土台（ウィンドウ・画面の切り替え・記録の保存・通知）とメインメニュー"""
+
+from datetime import datetime
+import platform
+import tkinter as tk
+from tkinter import messagebox
+from typing import Callable
+
+from justdoit import config, notify, report_service
+from justdoit.records import append_record_to_csv, format_hours_mins, load_records, streak_days, today_minutes
+from justdoit.ui import dashboard, settings, theme, timer
+from justdoit.ui.theme import C, make_back_button, make_button, make_label, make_link
+
+MENU_SIZE = (320, 340)
+
+
+class JustDoItApp:
+    """ウィンドウを管理し、画面の切り替えと記録の保存・通知を受け持つ
+
+    各画面（timer / settings / dashboard / history）は、このクラスのインスタンスを受け取る関数として書く。
+    """
+
+    def __init__(self, root: tk.Tk):
+        self.root = root
+        # 画面の中央に置くまでは隠しておく（OS が決めた位置に一瞬表示されないように）
+        self.root.withdraw()
+        self.root.title(config.APP_NAME)
+        # ウィンドウ左上・タスクバーのアイコン（画像がなくてもアプリは動かす）
+        try:
+            self.icon = tk.PhotoImage(file=config.get_icon_path())
+            self.root.iconphoto(True, self.icon)
+        except tk.TclError:
+            pass
+        # 閉じるボタンが押されたら、タイマーや入力の途中か確認してから閉じる
+        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+
+        # Windows の表示倍率（125%・150% など）。画面サイズや余白をこの倍率で広げる
+        # （Mac は OS が拡大するので 1 のまま）
+        self.scale = self.root.winfo_fpixels("1i") / 96 if platform.system() == "Windows" else 1.0
+        theme.set_scale(self.scale)
+        # タイマーなどで予約した after 処理（画面を切り替えるときに取り消す）
+        self.after_id: str | None = None
+        # 今の画面だけで有効なキー操作（画面を切り替えるときに解除する）
+        self.key_bindings: list[str] = []
+        # 閉じる前に確認が必要な画面が設定する。False を返すと閉じるのをやめる
+        self.close_guard: Callable[[], bool] | None = None
+        # 配信サービスと通信中かどうか（通信中は設定画面から離れられないようにする）
+        self.busy = False
+        # 振り返り・設定で最後に選んだタブ（次に開いたときも同じタブで表示する）
+        self.dashboard_period = "week"
+        self.settings_tab = "timer"
+        # 最初の画面は PC 画面の中央に置き、それ以降は今の位置を保つ
+        self.placed = False
+
+        self.show_main_menu()
+        self.root.deiconify()
+        # 前回送れなかった記録があれば再送する
+        report_service.start_sync()
+
+    # ---------- 画面の土台 ----------
+    def px(self, value: float) -> int:
+        """100% 表示のときのピクセル数を、今の表示倍率に合わせて変換する"""
+        return round(value * self.scale)
+
+    def make_screen(self, size: tuple[int, int] = MENU_SIZE) -> tk.Frame:
+        """前の画面を消して、余白付きの新しい画面の土台を返す"""
+        self.cancel_scheduled()
+        for sequence in self.key_bindings:
+            self.root.unbind(sequence)
+        self.key_bindings = []
+        self.close_guard = None
+        for widget in self.root.winfo_children():
+            widget.destroy()
+        # 「デバイスに合わせる」のときは、画面を切り替えるたびに OS の設定を確かめて色を合わせる
+        theme.apply_theme(self.root, config.load_preferences().appearance)
+        self.resize_window(*size)
+        screen = tk.Frame(self.root, bg=C.bg, padx=self.px(24), pady=self.px(20))
+        screen.pack(fill="both", expand=True)
+        return screen
+
+    def make_header(
+        self, screen: tk.Frame, title: str, back: Callable[[], None] | None = None
+    ) -> tk.Frame:
+        """タイトルと「戻る」を並べた見出し（Esc キーでも戻れる）。戻り先は back（省略時はメニュー）"""
+        header = tk.Frame(screen, bg=C.bg)
+        header.pack(fill="x", pady=(0, 16))
+        make_label(header, title, size=16, bold=True).pack(side="left")
+
+        def go_back():
+            # 通信中に画面を離れると、結果のダイアログが別の画面（タイマー中など）に出てしまうため戻れなくする
+            if not self.busy:
+                (back or self.show_main_menu)()
+
+        make_back_button(header, go_back).pack(side="right")
+        self.bind_key("<Escape>", go_back)
+        return header
+
+    def bind_key(self, sequence: str, callback: Callable[[], None]) -> None:
+        """今の画面だけで有効なキー操作を登録する"""
+        self.root.bind(sequence, lambda event: callback())
+        self.key_bindings.append(sequence)
+
+    def resize_window(self, width: int, height: int) -> None:
+        """ウィンドウの中心を保ったままサイズを変える（大きい画面が右下に寄らないように）
+
+        起動直後はPC画面の中央に置く。はみ出す場合はPC画面内に収まるよう位置を寄せる。
+        """
+        width, height = self.px(width), self.px(height)
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        # 「表示されているか」では判定しない（配色の切り替えでウィンドウが先に表示されることがあるため）
+        if self.placed:
+            self.root.update_idletasks()
+            center_x = self.root.winfo_x() + self.root.winfo_width() // 2
+            center_y = self.root.winfo_y() + self.root.winfo_height() // 2
+        else:
+            center_x, center_y = screen_width // 2, screen_height // 2
+            self.placed = True
+
+        x = max(0, min(center_x - width // 2, screen_width - width))
+        y = max(0, min(center_y - height // 2, screen_height - height))
+        self.root.geometry(f"{width}x{height}+{x}+{y}")
+
+    def bring_to_front(self, on_top: bool) -> None:
+        """ウィンドウを最前面に出す / 解除する"""
+        self.root.attributes("-topmost", on_top)
+        if on_top:
+            self.root.deiconify()
+            self.root.lift()
+            self.root.focus_force()
+
+    def on_close(self) -> None:
+        if self.close_guard and not self.close_guard():
+            return
+        self.root.destroy()
+
+    # ---------- after 処理の予約 ----------
+    def schedule(self, delay_ms: int, callback: Callable[[], None]) -> None:
+        """delay_ms 後に callback を呼ぶ（画面を切り替えると自動で取り消される）"""
+        self.after_id = self.root.after(delay_ms, callback)
+
+    def cancel_scheduled(self) -> None:
+        """予約済みの after 処理を取り消す（画面遷移後にタイマーが動き続けるのを防ぐ）"""
+        if self.after_id is not None:
+            self.root.after_cancel(self.after_id)
+            self.after_id = None
+
+    # ---------- 通知 ----------
+    def notify(self, title: str, message: str, prefs: config.Preferences | None = None) -> None:
+        """タイマーの終わりを、設定画面で選んだ方法で知らせる"""
+        prefs = prefs or config.load_preferences()
+        if prefs.notify_sound and not notify.play_sound():
+            self.root.bell()
+        if prefs.notify_os:
+            notify.show_notification(title, message)
+        if prefs.notify_front:
+            self.bring_to_front(True)
+
+    # ---------- 記録の保存 ----------
+    def save_record(self, task: str, duration_mins: int) -> bool:
+        """ローカルCSVへの保存 ＆ 週次レポート用の送信。保存できたら True を返す"""
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        try:
+            append_record_to_csv(config.get_csv_path(), now_str, task, duration_mins)
+        except OSError as e:
+            messagebox.showerror(
+                "保存エラー",
+                f"作業ログを保存できませんでした:\n{e}\n\n"
+                "作業ログを Excel などで開いている場合は、閉じてからもう一度保存してください。",
+                parent=self.root,
+            )
+            return False
+        print(f"【ローカル保存完了】{now_str} - {task} ({duration_mins}分)")
+
+        # 週次レポートに登録済みなら、送信待ちキューに積んでから別スレッドで送る
+        if report_service.is_registered():
+            try:
+                report_service.enqueue_logs(
+                    config.get_report_queue_path(), [report_service.make_log(now_str, task, duration_mins)]
+                )
+            except OSError as e:
+                print(f"⚠️ 週次レポート用の記録を保存できませんでした: {e}")
+            report_service.start_sync()
+        return True
+
+    # ---------- メインメニュー ----------
+    def show_main_menu(self) -> None:
+        """起動時のメインメニュー（迷わないよう、目立つボタンは「5分だけやる」の1つだけ）"""
+        screen = self.make_screen(MENU_SIZE)
+        focus_minutes = config.load_preferences().focus_minutes
+
+        def start_short():
+            timer.show_focus_timer(self, timer.FOCUS_SHORT_SECONDS)
+
+        def start_long():
+            timer.show_focus_timer(self, focus_minutes * 60)
+
+        make_label(screen, "さあ、どうする？", size=16, bold=True).pack(pady=(20, 2))
+        make_label(screen, today_summary(), size=10, color=C.muted).pack(pady=(0, 18))
+        make_button(screen, "5分だけやる", start_short, primary=True).pack(fill="x", pady=4)
+        make_button(screen, f"{focus_minutes}分やる", start_long).pack(fill="x", pady=4)
+        # 表示はしないが、Enter キーでも「5分だけやる」を始められる
+        self.bind_key("<Return>", start_short)
+
+        links = tk.Frame(screen, bg=C.bg)
+        links.pack(side="bottom")
+        menu = [
+            ("記録する", lambda: timer.show_manual_record(self)),
+            ("振り返り", lambda: dashboard.show_dashboard(self)),
+            ("設定", lambda: settings.show_settings(self)),
+        ]
+        for i, (text, command) in enumerate(menu):
+            if i:
+                make_label(links, "・", size=10, color=C.border).pack(side="left", padx=4)
+            make_link(links, text, command).pack(side="left")
+
+
+def today_summary() -> str:
+    """メニューに出す「今日 50分 ・ 3日連続」（作業ログが読めなければ空）"""
+    try:
+        records = load_records(config.get_csv_path())
+    except (OSError, ValueError):
+        return ""
+    text = f"今日 {format_hours_mins(today_minutes(records))}"
+    streak = streak_days(records)
+    if streak >= 2:
+        text += f" ・ {streak}日連続"
+    return text
+
+
+def run() -> None:
+    """アプリを起動する"""
+    if platform.system() == "Windows":
+        # python.exe とは別のアプリとして扱わせ、タスクバーに Python ではなくアプリのアイコンを出す
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("JustDoIt.App")
+        # 表示倍率が 100% 以外の PC で文字がぼやけないよう、Windows による拡大をやめて自前で拡大する
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(1)
+        except (AttributeError, OSError):
+            ctypes.windll.user32.SetProcessDPIAware()
+    root = tk.Tk()
+    JustDoItApp(root)
+    root.mainloop()
