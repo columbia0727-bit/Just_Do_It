@@ -119,6 +119,13 @@ class EditRecordsTest(unittest.TestCase):
         lines = self.csv_path.read_text(encoding="utf-8-sig").splitlines()
         self.assertEqual(lines, ["壊れた行,x,1分", "2026-10-13 09:00:00,読書,45分"])
 
+    def test_group_by_month_is_newest_first(self):
+        records.append_record_to_csv(self.csv_path, "2026-09-30 23:00:00", "読書", 20)
+        months = records.group_by_month(records.list_records(self.csv_path))
+        self.assertEqual([key for key, _ in months], [(2026, 10), (2026, 9)])
+        self.assertEqual([r.task for r in months[0][1]], ["学習", "制作"])
+        self.assertEqual([r.task for r in months[1][1]], ["読書"])
+
     def test_update_can_change_datetime(self):
         records.update_record(self.csv_path, 0, "制作", 25, recorded_at=datetime(2026, 10, 11, 21, 30))
         self.assertEqual(self.csv_path.read_text(encoding="utf-8-sig").splitlines()[0], "2026-10-11 21:30:00,制作,25分")

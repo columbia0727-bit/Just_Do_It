@@ -13,34 +13,41 @@ from justdoit.records import (
     DATETIME_FORMAT,
     Record,
     delete_record,
+    group_by_month,
     list_records,
     update_record,
     validate_record,
     validate_when,
 )
-from justdoit.ui.theme import C, make_button, make_entry, make_label, ui_font
+from justdoit.ui.theme import C, make_button, make_entry, make_label, make_select, ui_font
 
 if TYPE_CHECKING:
     from justdoit.ui.app import JustDoItApp
 
-HISTORY_SIZE = (560, 560)
-MAX_ROWS = 200  # 一覧に出す件数（新しい順）
+HISTORY_SIZE = (560, 580)
 
 
 def show_history(app: JustDoItApp, back: Callable[[], None]) -> None:
-    """記録一覧を表示する。「戻る」で back（振り返り画面）へ戻る"""
+    """記録一覧を表示する。「戻る」で back（振り返り画面）へ戻る
+
+    記録は月ごとに切り替えて表示する（同期で1年分の記録があっても、どの月の記録も直せるように）。
+    """
     screen = app.make_screen(HISTORY_SIZE)
     app.make_header(screen, "記録一覧", back=back)
 
     csv_path = config.get_csv_path()
     try:
-        records = list_records(csv_path)[:MAX_ROWS]
+        months = group_by_month(list_records(csv_path))
     except OSError as e:
         messagebox.showerror("エラー", f"作業ログを読み込めませんでした:\n{e}", parent=app.root)
         return
-    if not records:
+    if not months:
         make_label(screen, "まだ記録がありません。", size=11, color=C.muted).pack(anchor="w")
         return
+    # 前に選んでいた月を表示する（その月の記録をすべて消した場合などは、いちばん新しい月）
+    month_keys = [key for key, _ in months]
+    index = month_keys.index(app.history_month) if app.history_month in month_keys else 0
+    records = months[index][1]
 
     # 表は残りの高さいっぱいに広げるので、下に置くものから先に配置する
     if report_service.is_registered():
@@ -49,7 +56,16 @@ def show_history(app: JustDoItApp, back: Callable[[], None]) -> None:
         ).pack(side="bottom", anchor="w")
     form = RecordForm(app, screen, csv_path, on_changed=lambda: show_history(app, back))
 
-    make_label(screen, "直したい記録を選んでください", size=10, color=C.muted).pack(anchor="w", pady=(0, 6))
+    def choose_month(new_index: int) -> None:
+        app.history_month = month_keys[new_index]
+        show_history(app, back)
+
+    top = tk.Frame(screen, bg=screen["bg"])
+    top.pack(fill="x", pady=(0, 8))
+    make_select(
+        top, [f"{year}年{month}月（{len(items)}件）" for (year, month), items in months], index, choose_month
+    ).pack(side="left")
+    make_label(top, "直したい記録を選んでください", size=10, color=C.muted).pack(side="left", padx=(12, 0))
     table = build_table(app, screen, records)
     table.bind("<<TreeviewSelect>>", lambda event: form.load(records[table.index(table.selection()[0])]))
 

@@ -55,6 +55,8 @@ class JustDoItApp:
         # 振り返り・設定で最後に選んだタブ（次に開いたときも同じタブで表示する）
         self.dashboard_period = "week"
         self.settings_tab = "timer"
+        # 記録一覧で最後に選んだ月（年, 月）。None ならいちばん新しい月
+        self.history_month: tuple[int, int] | None = None
         # 今のウィンドウの大きさ（最初の画面は PC 画面の中央に置き、それ以降は今の中心を保って大きさを変える）
         self.window_size: tuple[int, int] | None = None
         # 新しいバージョンが出ていれば、そのリリース（起動時に別スレッドで確かめる）

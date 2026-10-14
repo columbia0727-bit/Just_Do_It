@@ -172,6 +172,14 @@ def list_records(csv_path: Path) -> list[Record]:
     return sorted(result, key=lambda r: (r.recorded_at, r.row_index), reverse=True)
 
 
+def group_by_month(records: list[Record]) -> list[tuple[tuple[int, int], list[Record]]]:
+    """記録を月ごとにまとめる。新しい月から順に ((年, 月), その月の記録) を返す（記録の並びはそのまま）"""
+    months: dict[tuple[int, int], list[Record]] = {}
+    for record in records:
+        months.setdefault((record.recorded_at.year, record.recorded_at.month), []).append(record)
+    return sorted(months.items(), reverse=True)
+
+
 def update_record(
     csv_path: Path, row_index: int, task: str, minutes: int, recorded_at: datetime | None = None
 ) -> None:
