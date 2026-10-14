@@ -2,11 +2,14 @@
 
 from datetime import datetime
 import platform
+import queue
+import threading
 import tkinter as tk
 from tkinter import messagebox
 from typing import Callable
+import webbrowser
 
-from justdoit import config, notify, report_service
+from justdoit import config, notify, report_service, updates
 from justdoit.records import append_record_to_csv, format_hours_mins, load_records, streak_days, today_minutes
 from justdoit.ui import dashboard, settings, theme, timer
 from justdoit.ui.theme import C, make_back_button, make_button, make_label, make_link
@@ -51,11 +54,34 @@ class JustDoItApp:
         self.settings_tab = "timer"
         # 最初の画面は PC 画面の中央に置き、それ以降は今の位置を保つ
         self.placed = False
+        # 新しいバージョンが出ていれば、そのリリース（起動時に別スレッドで確かめる）
+        self.new_release: updates.Release | None = None
+        # 今メインメニューを表示しているか（新しいバージョンが見つかったら表示し直すため）
+        self.on_menu = False
 
         self.show_main_menu()
         self.root.deiconify()
         # 前回送れなかった記録があれば再送する
         report_service.start_sync()
+        self.start_update_check()
+
+    def start_update_check(self) -> None:
+        """新しいバージョンが出ているかを別スレッドで確かめ、見つかればメニューに知らせを出す"""
+        results: queue.SimpleQueue = queue.SimpleQueue()
+        threading.Thread(target=lambda: results.put(updates.check_for_update()), daemon=True).start()
+
+        # Tk は別スレッドから触れないため、結果はキュー経由で受け取る
+        # （画面を切り替えても止まらないよう、schedule ではなく root.after を使う）
+        def wait_result():
+            try:
+                self.new_release = results.get_nowait()
+            except queue.Empty:
+                self.root.after(500, wait_result)
+                return
+            if self.new_release and self.on_menu:
+                self.show_main_menu()
+
+        wait_result()
 
     # ---------- 画面の土台 ----------
     def px(self, value: float) -> int:
@@ -69,6 +95,7 @@ class JustDoItApp:
             self.root.unbind(sequence)
         self.key_bindings = []
         self.close_guard = None
+        self.on_menu = False
         for widget in self.root.winfo_children():
             widget.destroy()
         # 「デバイスに合わせる」のときは、画面を切り替えるたびに OS の設定を確かめて色を合わせる
@@ -214,6 +241,14 @@ class JustDoItApp:
             if i:
                 make_label(links, "・", size=10, color=C.border).pack(side="left", padx=4)
             make_link(links, text, command).pack(side="left")
+
+        # 新しいバージョンがあるときだけ、ダウンロードページへの案内を出す（メニューをシンプルに保つため）
+        if self.new_release:
+            release = self.new_release
+            make_link(
+                screen, f"新しいバージョン {release.version} があります", lambda: webbrowser.open(release.url), accent=True
+            ).pack(side="bottom", pady=(0, 10))
+        self.on_menu = True
 
 
 def today_summary() -> str:

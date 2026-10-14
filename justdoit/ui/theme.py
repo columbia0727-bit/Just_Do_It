@@ -307,6 +307,7 @@ class PillButton(tk.Label):
 
     kind: "primary"（塗りつぶし・1画面に1つ）/ "secondary"（枠線）/ "chip"（小さな候補）/
           "tab"・"tab_active"（切り替えタブ）
+    マウスを乗せたときはカーソルを変えず、ボタンの色だけを変える（指の形のカーソルは Mac で不自然に見えるため）
     """
 
     def __init__(
@@ -343,7 +344,6 @@ class PillButton(tk.Label):
             padx=0,
             pady=0,
             highlightthickness=0,
-            cursor="hand2" if command else "arrow",
         )
         self.height = px(height)
         self.images: dict[tuple[int, bool], ImageTk.PhotoImage] = {}
@@ -397,12 +397,13 @@ def make_back_button(parent: tk.Widget, command: Callable[[], object]) -> PillBu
     return PillButton(parent, "← 戻る", command, kind="chip")
 
 
-def make_link(parent: tk.Widget, text: str, command: Callable[[], object]) -> tk.Label:
-    """目立たせたくない操作用の、文字だけのボタン"""
-    link = make_label(parent, text, size=10, color=C.muted, cursor="hand2")
+def make_link(parent: tk.Widget, text: str, command: Callable[[], object], accent: bool = False) -> tk.Label:
+    """目立たせたくない操作用の、文字だけのボタン（accent なら、気づいてほしいお知らせ用にアクセント色にする）"""
+    color, hover = (C.accent, C.accent_hover) if accent else (C.muted, C.text)
+    link = make_label(parent, text, size=10, color=color)
     link.bind("<Button-1>", lambda event: command())
-    link.bind("<Enter>", lambda event: link.config(fg=C.text))
-    link.bind("<Leave>", lambda event: link.config(fg=C.muted))
+    link.bind("<Enter>", lambda event: link.config(fg=hover))
+    link.bind("<Leave>", lambda event: link.config(fg=color))
     return link
 
 
@@ -453,7 +454,6 @@ def make_checkbox(parent: tk.Widget, text: str, checked: bool, on_change: Callab
         activeforeground=C.text,
         selectcolor=C.surface,
         anchor="w",
-        cursor="hand2",
         bd=0,
         highlightthickness=0,
     )

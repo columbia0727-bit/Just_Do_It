@@ -18,9 +18,22 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - run: sudo apt-get update && sudo apt-get install -y python3-tk
+      # 画面の配色のテストは Tkinter のウィンドウを作るので、仮想ディスプレイ（Xvfb）の上で動かす
+      - run: sudo apt-get update && sudo apt-get install -y python3-tk xvfb
       - run: pip install -r requirements.txt
-      - run: python -m unittest discover -s tests -v
+      - run: xvfb-run -a python -m unittest discover -s tests -v
+      # リリースのタグ（v1.2.0 など）と、アプリに表示するバージョン（justdoit/__init__.py）がずれていたら止める
+      - name: Check version matches tag
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          python - <<'EOF'
+          import os, sys
+          import justdoit
+          tag = os.environ["GITHUB_REF_NAME"].lstrip("v")
+          if justdoit.__version__ != tag:
+              sys.exit(f"justdoit/__init__.py の __version__ ({justdoit.__version__}) がタグ ({tag}) と違います")
+          print(f"バージョン {tag} を確認しました")
+          EOF
 
   build:
     needs: test

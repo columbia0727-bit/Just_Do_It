@@ -21,8 +21,8 @@ from justdoit.records import (
     summarize_by_task,
     summarize_period,
 )
-from justdoit.ui import history
-from justdoit.ui.theme import C, make_label, make_link, make_tabs
+from justdoit.ui import history, timer
+from justdoit.ui.theme import C, make_button, make_label, make_link, make_tabs
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from justdoit.ui.app import JustDoItApp
 
 DASHBOARD_SIZE = (720, 540)
+EMPTY_SIZE = (420, 340)
 TOP_TASKS = 5
 MAX_TASK_NAME_LENGTH = 10
 # グラフの横軸の目盛りを何本おきに出すか（月は30本あるので間引く）
@@ -47,19 +48,13 @@ def show_dashboard(app: JustDoItApp, period: str | None = None) -> None:
     """ローカルのCSVを読み込んで、選んだ期間（週・月・年）の振り返りを表示する"""
     if period:
         app.dashboard_period = period
-    csv_path = config.get_csv_path()
-    no_record_message = "まだ記録がありません。\nまずは5分やってみましょう。"
-
-    if not csv_path.exists():
-        messagebox.showinfo("振り返り", no_record_message, parent=app.root)
-        return
     try:
-        records = load_records(csv_path)
+        records = load_records(config.get_csv_path())
     except Exception as e:
         messagebox.showerror("エラー", f"データの読み込み中にエラーが発生しました:\n{e}", parent=app.root)
         return
     if summarize_by_task(records).empty:
-        messagebox.showinfo("振り返り", no_record_message, parent=app.root)
+        show_empty(app)
         return
 
     summary = summarize_period(records, app.dashboard_period)
@@ -86,6 +81,17 @@ def show_dashboard(app: JustDoItApp, period: str | None = None) -> None:
 
     make_link(side, "すべての記録を見る・直す", open_history).pack(side="bottom", anchor="w", pady=(0, 8))
     build_chart(app, body, summary).pack(side="left", fill="both", expand=True)
+
+
+def show_empty(app: JustDoItApp) -> None:
+    """まだ記録がないときの振り返り画面（ダイアログではなく、画面の中で案内して最初の一歩を促す）"""
+    screen = app.make_screen(EMPTY_SIZE)
+    app.make_header(screen, "振り返り")
+    make_label(screen, "まだ記録がありません", size=14, bold=True).pack(pady=(40, 4))
+    make_label(screen, "記録すると、ここに作業時間のグラフが表示されます。", size=10, color=C.muted).pack()
+    make_button(
+        screen, "5分だけやってみる", lambda: timer.show_focus_timer(app, timer.FOCUS_SHORT_SECONDS), primary=True
+    ).pack(side="bottom", fill="x")
 
 
 def build_stats(screen: tk.Frame, summary: PeriodSummary, records: pd.DataFrame) -> None:

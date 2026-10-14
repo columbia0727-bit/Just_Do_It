@@ -43,7 +43,12 @@ const CODE_RESEND_SECONDS = 60;
 const MAX_CODE_ATTEMPTS = 5;
 const MAX_CODES_PER_EMAIL = 5; // CODE_LIMIT_WINDOW_SECONDS あたり
 const CODE_LIMIT_WINDOW_SECONDS = 6 * 60 * 60;
-const MIN_QUOTA_FOR_CODES = 20; // レポート用に残しておく送信枠
+// 宛先を変えながら登録を繰り返されても送信枠を使い切られないよう、サービス全体でも上限を設ける
+const MAX_CODES_PER_HOUR = 15;
+const MIN_QUOTA_FOR_CODES = 20; // レポート用に残しておく送信枠（確認コード・テストメールはこれを残して送る）
+// テストメール（アプリの設定画面から送る、その場で届くレポート）の回数制限
+const TEST_REPORT_INTERVAL_SECONDS = 10 * 60;
+const MAX_TEST_REPORTS_PER_DAY = 3;
 const LOG_RETENTION_DAYS = 35;
 const MAX_EMAIL_LENGTH = 200;
 const MAX_TASK_LENGTH = 100;
@@ -73,6 +78,7 @@ function doPost(e) {
     update_log: handleUpdateLog_,
     delete_log: handleDeleteLog_,
     update_schedule: handleUpdateSchedule_,
+    send_test_report: handleSendTestReport_,
     unregister: handleUnregister_,
   };
   const handler = handlers[data.action];
@@ -124,11 +130,17 @@ function handleRegister_(data) {
   if (sentCount >= MAX_CODES_PER_EMAIL) {
     fail_("確認コードの送信回数が上限に達しました。時間をおいて再度お試しください", "rate_limited");
   }
+  const hourKey = "codes:" + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyyMMddHH");
+  const sentThisHour = Number(cache.get(hourKey) || 0);
+  if (sentThisHour >= MAX_CODES_PER_HOUR) {
+    fail_("現在混み合っています。1時間ほどしてから再度お試しください", "rate_limited");
+  }
   if (MailApp.getRemainingDailyQuota() < MIN_QUOTA_FOR_CODES) {
     fail_("現在混み合っています。明日以降に再度お試しください", "rate_limited");
   }
 
-  const code = String(Math.floor(Math.random() * 1000000)).padStart(6, "0");
+  const code = generateCode_();
+  cache.put(hourKey, String(sentThisHour + 1), 60 * 60);
   cache.put(
     "code:" + email,
     JSON.stringify({ code: code, attempts: 0, expiresAt: Date.now() + CODE_TTL_SECONDS * 1000 }),
@@ -148,6 +160,13 @@ function handleRegister_(data) {
       "心当たりがない場合は、このメールを破棄してください。",
   });
   return { status: "success" };
+}
+
+// 6桁の確認コード。Math.random() は推測されにくさが保証されないため、
+// 安全な乱数から作られる UUID（バージョン4）の先頭48ビットから作る
+function generateCode_() {
+  const random = parseInt(Utilities.getUuid().replace(/-/g, "").slice(0, 12), 16);
+  return String(random % 1000000).padStart(6, "0");
 }
 
 // 確認コードを照合し、アプリ用のトークンを発行する
@@ -259,6 +278,37 @@ function parseLogId_(value) {
   return LOG_ID_PATTERN.test(String(value || "")) ? String(value) : "";
 }
 
+// 今の記録でレポートを1通、すぐに送る（登録後、最初のレポートを待たずに届くか確かめられるように）
+function handleSendTestReport_(data) {
+  const userId = authenticate_(data.token);
+  const cache = CacheService.getScriptCache();
+  if (cache.get("test:" + userId)) {
+    fail_("テストメールは送信済みです。10分ほど待ってから再度お試しください", "rate_limited");
+  }
+  const dayKey = "tests:" + userId + ":" + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyyMMdd");
+  const sentToday = Number(cache.get(dayKey) || 0);
+  if (sentToday >= MAX_TEST_REPORTS_PER_DAY) {
+    fail_("テストメールは1日" + MAX_TEST_REPORTS_PER_DAY + "回までです。明日以降に再度お試しください", "rate_limited");
+  }
+  if (MailApp.getRemainingDailyQuota() < MIN_QUOTA_FOR_CODES) {
+    fail_("現在混み合っています。明日以降に再度お試しください", "rate_limited");
+  }
+
+  const users = getSheet_("users");
+  const row = findRow_(users, 1, userId);
+  if (!row) {
+    fail_("認証に失敗しました。設定画面から再登録してください", "unauthorized");
+  }
+  const now = new Date();
+  const user = { userId: userId, email: String(users.getRange(row, 2).getValue()), dueAt: now };
+  const logs = groupLogsByUser_(getSheetRows_(getSheet_("logs")), addDays_(now, -14), now)[userId] || [];
+
+  cache.put("test:" + userId, "1", TEST_REPORT_INTERVAL_SECONDS);
+  cache.put(dayKey, String(sentToday + 1), 24 * 60 * 60);
+  sendReport_(user, logs, ScriptApp.getService().getUrl(), true);
+  return { status: "success" };
+}
+
 // アプリから配信を停止する
 function handleUnregister_(data) {
   deactivateUser_(authenticate_(data.token));
@@ -346,7 +396,8 @@ function findDueUsers_(now) {
   return due;
 }
 
-function sendReport_(user, logs, baseUrl) {
+// isTest が true なら、件名に【テスト】を付ける（設定画面の「テストメールを送る」）
+function sendReport_(user, logs, baseUrl, isTest) {
   // 集計期間は「届ける予定だった日時」から決める（送信が遅れても期間がずれないように）
   const week = getReportRange_(user.dueAt);
   const current = summarize_(logs, week.start, week.end);
@@ -355,7 +406,9 @@ function sendReport_(user, logs, baseUrl) {
   MailApp.sendEmail({
     to: user.email,
     name: "Just do it.",
-    subject: "【Just do it.】1週間の作業レポート（" + formatDay_(week.start) + "〜" + formatDay_(week.lastDay) + "）",
+    subject:
+      (isTest ? "【テスト】" : "") +
+      "【Just do it.】1週間の作業レポート（" + formatDay_(week.start) + "〜" + formatDay_(week.lastDay) + "）",
     // HTML を表示できないメールソフト向けにテキスト版も付ける
     body: buildReportBody_(week, current, previous, unsubscribeUrl),
     htmlBody: buildReportHtml_(week, current, previous, unsubscribeUrl),

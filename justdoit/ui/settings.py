@@ -12,8 +12,9 @@ import threading
 import tkinter as tk
 from tkinter import messagebox, simpledialog
 from typing import TYPE_CHECKING, Callable
+import webbrowser
 
-from justdoit import config, report_service
+from justdoit import __version__, config, report_service
 from justdoit.records import load_records
 from justdoit.report_service import ReportServiceError
 from justdoit.ui import theme
@@ -53,10 +54,23 @@ def show_settings(app: JustDoItApp, tab: str | None = None) -> None:
     ).pack(side="left", padx=(app.px(16), 0))
 
     build_data_folder(app, screen)
+    build_version(app, screen)
     if app.settings_tab == "timer":
         build_timer_section(app, screen)
     else:
         build_report_section(app, screen)
+
+
+def build_version(app: JustDoItApp, screen: tk.Frame) -> None:
+    """保存先の上: 今のバージョンと、新しいバージョンがあればダウンロードページへの案内"""
+    row = tk.Frame(screen, bg=screen["bg"])
+    row.pack(side="bottom", fill="x", pady=(0, app.px(6)))
+    make_label(row, f"バージョン {__version__}", size=9, color=C.muted).pack(side="left")
+    if app.new_release:
+        release = app.new_release
+        make_link(
+            row, f"新しいバージョン {release.version} をダウンロード", lambda: webbrowser.open(release.url), accent=True
+        ).pack(side="right")
 
 
 def build_data_folder(app: JustDoItApp, screen: tk.Frame) -> None:
@@ -179,12 +193,15 @@ def build_report_section(app: JustDoItApp, frame: tk.Frame) -> None:
     if settings.get("report_token"):
         make_label(frame, f"登録中: {settings.get('report_email', '')}", size=11).pack(anchor="w")
         # 登録後は、選び直すとすぐサーバーに反映する
-        status = make_label(frame, size=10, color=C.muted)
+        status = make_label(frame, size=10, color=C.muted, wraplength=app.px(TEXT_WIDTH), justify="left")
         picker = SchedulePicker(app, frame, report_service.get_schedule(settings))
         picker.on_change = lambda: update_schedule(app, picker, status)
         picker.frame.pack(anchor="w", pady=(8, 0))
         status.pack(anchor="w")
-        make_button(frame, "配信を停止する", lambda: unregister(app)).pack(fill="x", pady=(8, 0))
+        # 最初のレポートを待たずに、届くか・どんな内容かをその場で確かめられるようにする
+        make_button(frame, "テストメールを送る", lambda: send_test_report(app, status)).pack(fill="x", pady=(8, 0))
+        # 配信停止は押し間違えないよう、目立たない文字のボタンにする（押すと確認が出る）
+        make_link(frame, "配信を停止する", lambda: unregister(app)).pack(anchor="e", pady=(12, 0))
         return
 
     picker = SchedulePicker(app, frame, report_service.get_schedule(settings))
@@ -379,6 +396,30 @@ def update_schedule(app: JustDoItApp, picker: SchedulePicker, status: tk.Label) 
     token = config.load_config().get("report_token")
     call_service_async(
         app, {"action": "update_schedule", "token": token, "weekday": weekday, "hour": hour}, on_done
+    )
+
+
+# ==========================================
+# テストメール
+# ==========================================
+def send_test_report(app: JustDoItApp, status: tk.Label) -> None:
+    """今の記録でレポートを1通すぐに送る（送信回数はサーバー側で制限している）"""
+    if app.busy:
+        return
+    status.config(text="テストメールを送っています…")
+    # 送信待ちの記録があれば送り始めておく（テストメールに、なるべく最新の記録が入るように）
+    report_service.start_sync()
+
+    def on_done(result, error):
+        if error:
+            status.config(text="")
+            messagebox.showerror("送信エラー", str(error), parent=app.root)
+            return
+        email = config.load_config().get("report_email", "")
+        status.config(text=f"{email} にテストメールを送りました（迷惑メールフォルダも確認してください）")
+
+    call_service_async(
+        app, {"action": "send_test_report", "token": config.load_config().get("report_token")}, on_done
     )
 
 
