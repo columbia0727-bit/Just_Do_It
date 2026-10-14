@@ -3,7 +3,7 @@
 [![Build](https://github.com/columbia0727-bit/Just_Do_It/actions/workflows/build.yml/badge.svg)](https://github.com/columbia0727-bit/Just_Do_It/actions/workflows/build.yml)
 [![Release](https://img.shields.io/github/v/release/columbia0727-bit/Just_Do_It)](https://github.com/columbia0727-bit/Just_Do_It/releases/latest)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-blue)
-![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+![Python](https://img.shields.io/badge/python-3.12%2B-blue)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 **「とりあえず5分だけやる」から始める、ポモドーロ＆作業記録アプリ**（Windows / macOS）
@@ -160,7 +160,7 @@ flowchart LR
 ### 技術スタック
 | 分野 | 使っているもの |
 | --- | --- |
-| 言語・GUI | Python 3.10+、Tkinter、Pillow（角丸ボタン・進捗リングの描画） |
+| 言語・GUI | Python 3.12+、Tkinter、Pillow（角丸ボタン・進捗リングの描画） |
 | データ処理・グラフ | pandas、Matplotlib |
 | サーバー | Google Apps Script、Google スプレッドシート、Gmail |
 | 配布・CI | PyInstaller、GitHub Actions |
@@ -196,7 +196,9 @@ python main.py
 ```bash
 python -m unittest discover -s tests -v
 ```
-画面を表示するテストは、ディスプレイのない環境では自動でスキップされます（GitHub Actions では仮想ディスプレイ上で実行）。ソースから起動した場合、記録と設定は `main.py` と同じフォルダに保存されます。
+画面を表示するテストは、ディスプレイのない環境では自動でスキップされます（GitHub Actions では仮想ディスプレイ上で実行）。
+
+依存ライブラリは、動作を確かめたバージョンに固定しています（`requirements.txt`）。新しいバージョンが出ると Dependabot がプルリクエストを作り、GitHub Actions のテストと配布版の動作確認が通ってから取り込みます。ソースから起動した場合、記録と設定は `main.py` と同じフォルダに保存されます。
 
 ### ビルド
 ```bash

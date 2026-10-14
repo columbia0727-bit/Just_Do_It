@@ -1,10 +1,13 @@
 name: Build desktop apps
 
-# v1.0.0 のようなタグができると（GitHub の Releases 画面で作成・または push）、
-# テスト後に Windows / macOS 向けアプリをビルドして Release に添付する
+# main への push とプルリクエスト（Dependabot によるバージョンアップを含む）では、テストとビルド・配布版の動作確認まで。
+# v1.0.0 のようなタグができると（GitHub の Releases 画面で作成・または push）、ビルドしたアプリを Release に添付する
 on:
   push:
+    branches: [main]
     tags: ["v*"]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:

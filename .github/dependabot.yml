@@ -1,0 +1,15 @@
+# 依存ライブラリと GitHub Actions の部品に新しいバージョンが出たら、プルリクエストで知らせる
+# （バージョンは固定しているので、上げるときはプルリクエストの CI で動作を確かめてから取り込む）
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: monthly
+    groups:
+      python-packages:
+        patterns: ["*"]
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly

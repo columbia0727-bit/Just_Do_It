@@ -1,2 +1,4 @@
+# ビルドに必要なライブラリ（アプリに何を同梱するかが変わらないよう、バージョンを固定する）
 -r requirements.txt
-pyinstaller>=6.0
+pyinstaller==6.22.3
+pyinstaller-hooks-contrib==2026.8
