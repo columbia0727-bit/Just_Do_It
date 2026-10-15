@@ -82,7 +82,7 @@ class DatePickerTest(unittest.TestCase):
         self.root.update()
         cells = self.day_cells(popup)
         self.assertEqual(len(cells), 30)  # 9月
-        cells[13].event_generate("<Button-1>")  # 9/13 は31日より前なので選べない
+        cells[13].event_generate("<Button-1>")  # 9/13 は選べる範囲（9/14〜）より前なので選べない
         cells[14].event_generate("<Button-1>")
         self.root.update()
         self.assertEqual(self.chosen, [FIRST])

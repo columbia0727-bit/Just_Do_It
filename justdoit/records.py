@@ -115,7 +115,9 @@ def validate_record(task: str, minutes_text: str) -> tuple[str, int] | str:
 
 
 WEEKDAY_NAMES = "月火水木金土日"
-RECENT_DAYS = 31  # 手動記録で選べる日付（今日から何日前まで）
+# 手動記録で選べる日付（今日から何日前まで）。振り返り・週次レポートの「年」（12か月）と、
+# サーバーで記録を預かる期間（400日）に収まる長さにする（それより前の記録は、グラフにも同期にも出ないため）
+RECENT_DAYS = 365
 
 
 def recorded_at_on(day: date, now: datetime) -> datetime:
