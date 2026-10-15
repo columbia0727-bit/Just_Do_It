@@ -42,6 +42,9 @@ const MAX_REPORT_HOUR = 23;
 const MAX_REPORT_DELAY_HOURS = 24; // 障害などでこれ以上遅れたレポートは送らず、次の回にする
 const MIN_REPORT_INTERVAL_DAYS = 6; // タイミングを変えても、前のレポートからこの日数は空ける
 const INCLUDE_TODAY_FROM_HOUR = 18; // この時刻以降に届くレポートは、その日の記録まで集計する
+// レポートの「直近30日」「直近12か月」のグラフ（アプリの振り返りの「月」「年」と同じ期間）
+const REPORT_RECENT_DAYS = 30;
+const REPORT_MONTHS = 12;
 const PURGE_HOUR = 4; // 古い記録の削除は1日1回、この時台に行う
 
 const CODE_TTL_SECONDS = 10 * 60;
@@ -394,7 +397,8 @@ function handleSendTestReport_(data) {
   }
   const now = new Date();
   const user = { userId: userId, email: String(users.getRange(row, 2).getValue()), dueAt: now };
-  const logs = groupLogsByUser_(getSheetRows_(getSheet_("logs")), addDays_(now, -14), now)[userId] || [];
+  const from = getReportRange_(now).yearStart;
+  const logs = groupLogsByUser_(getSheetRows_(getSheet_("logs")), from, now)[userId] || [];
 
   cache.put("test:" + userId, "1", TEST_REPORT_INTERVAL_SECONDS);
   cache.put(dayKey, String(sentToday + 1), 24 * 60 * 60);
@@ -428,7 +432,7 @@ function sendDueReports() {
     // 送信中に記録の受付を止めないよう、ロックはデータの読み書き時だけ取る
     const oldest = due.reduce((min, user) => (user.dueAt < min ? user.dueAt : min), now);
     const logsByUser = withLock_(() =>
-      groupLogsByUser_(getSheetRows_(getSheet_("logs")), addDays_(oldest, -14), now)
+      groupLogsByUser_(getSheetRows_(getSheet_("logs")), getReportRange_(oldest).yearStart, now)
     );
 
     const baseUrl = ScriptApp.getService().getUrl();
@@ -500,9 +504,8 @@ function findDueUsers_(now) {
 // isTest が true なら、件名に【テスト】を付ける（設定画面の「テストメールを送る」）
 function sendReport_(user, logs, baseUrl, isTest) {
   // 集計期間は「届ける予定だった日時」から決める（送信が遅れても期間がずれないように）
-  const week = getReportRange_(user.dueAt);
-  const current = summarize_(logs, week.start, week.end);
-  const previous = summarize_(logs, week.prevStart, week.start);
+  const report = buildReport_(logs, user.dueAt);
+  const week = report.week;
   const unsubscribeUrl = unsubscribeUrl_(baseUrl, user.userId);
   MailApp.sendEmail({
     to: user.email,
@@ -511,8 +514,8 @@ function sendReport_(user, logs, baseUrl, isTest) {
       (isTest ? "【テスト】" : "") +
       "【Just do it.】1週間の作業レポート（" + formatDay_(week.start) + "〜" + formatDay_(week.lastDay) + "）",
     // HTML を表示できないメールソフト向けにテキスト版も付ける
-    body: buildReportBody_(week, current, previous, unsubscribeUrl),
-    htmlBody: buildReportHtml_(week, current, previous, unsubscribeUrl),
+    body: buildReportBody_(report, unsubscribeUrl),
+    htmlBody: buildReportHtml_(report, unsubscribeUrl),
   });
 }
 
@@ -527,9 +530,12 @@ function createReportTrigger() {
   ScriptApp.newTrigger("sendDueReports").timeBased().everyHours(1).create();
 }
 
-function buildReportBody_(week, current, previous, unsubscribeUrl) {
+function buildReportBody_(report, unsubscribeUrl) {
+  const { week, current, previous } = report;
   const lines = [
     "この1週間（" + formatDay_(week.start) + "〜" + formatDay_(week.lastDay) + "）の「Just do it.」レポートをお届けします。",
+    "",
+    cheerMessage_(report),
     "",
     "----------------------------------------",
     "",
@@ -538,6 +544,10 @@ function buildReportBody_(week, current, previous, unsubscribeUrl) {
       "（前の週より " + formatDiff_(current.totalMinutes - previous.totalMinutes) + "）",
     "- 記録回数 : " + current.count + "回",
     "- 記録した日 : " + current.days + " / 7日",
+    "",
+    "[これまでの積み上げ]",
+    "- 直近30日 : " + formatHoursMins_(report.recent.totalMinutes),
+    "- 直近12か月 : " + formatHoursMins_(monthsTotal_(report.months)),
     "",
     "[作業内容別内訳]",
   ];
@@ -553,8 +563,6 @@ function buildReportBody_(week, current, previous, unsubscribeUrl) {
   });
 
   lines.push(
-    "",
-    cheerMessage_(current, previous),
     "",
     "----------------------------------------",
     "※このメールは「Just do it.」アプリの週次レポート登録者に自動送信しています。",
@@ -576,16 +584,21 @@ const MAIL_COLORS = {
 };
 const WEEKDAYS = ["月", "火", "水", "木", "金", "土", "日"];
 
-function buildReportHtml_(week, current, previous, unsubscribeUrl) {
+function buildReportHtml_(report, unsubscribeUrl) {
   const c = MAIL_COLORS;
+  const { week, current, previous } = report;
   const range = formatDay_(week.start) + "〜" + formatDay_(week.lastDay);
   const sections = [
+    // ひとことは最初に目に入るよう、見出しのすぐ下に置く
+    '<p style="margin:16px 0 0;padding-left:12px;border-left:3px solid ' + c.accent + ";font-size:15px;line-height:1.8;" +
+      "color:" + c.text + ';">' + escapeHtml_(cheerMessage_(report)) + "</p>",
     htmlHero_(current, previous),
     htmlStats_(week, current),
     current.totalMinutes > 0 ? htmlDailyChart_(week, current) : "",
     current.totalMinutes > 0 ? htmlTaskBars_(current) : "",
-    '<p style="margin:28px 0 0;font-size:15px;line-height:1.8;color:' + c.text + ';">' +
-      escapeHtml_(cheerMessage_(current, previous)) + "</p>",
+    // 「これまでの積み上げ」は1週間の内容のあとに、小さめに添える（アプリの振り返りの「月」「年」と同じ期間）
+    report.recent.totalMinutes > 0 ? htmlRecentChart_(week, report.recent) : "",
+    monthsTotal_(report.months) > 0 ? htmlYearChart_(report.months) : "",
   ];
 
   return (
@@ -663,38 +676,86 @@ function htmlStats_(week, current) {
   );
 }
 
-// 曜日ごとの棒グラフ（画像を使わず、高さを指定したセルで描く）
+// 曜日ごとの棒グラフ（棒の上に「25分」のように時間を出す）
 function htmlDailyChart_(week, current) {
+  // 届く曜日によって週の始まりが変わるので、曜日は日付から求める
+  const labels = current.dayMinutes.map((_, i) => weekdayLabel_(addDays_(week.start, i)));
+  return (
+    htmlSectionTitle_("曜日ごとの作業時間") +
+    htmlBarChart_(current.dayMinutes, labels, {
+      height: 110,
+      valueLabel: (mins) => (mins > 0 ? mins + "分" : ""),
+    })
+  );
+}
+
+// 直近30日の棒グラフ（1日ごと。日付は5日おきに出し、最新の日は必ず出す）
+function htmlRecentChart_(week, recent) {
+  const count = recent.dayMinutes.length;
+  const labels = recent.dayMinutes.map((_, i) =>
+    (count - 1 - i) % 5 === 0 ? formatDay_(addDays_(week.monthStart, i)) : ""
+  );
+  return (
+    htmlSectionTitle_("直近30日", formatHoursMins_(recent.totalMinutes)) +
+    htmlBarChart_(recent.dayMinutes, labels, { height: 70, gap: 1, labelSize: 10 })
+  );
+}
+
+// 直近12か月の棒グラフ（1か月ごと）
+function htmlYearChart_(months) {
+  return (
+    htmlSectionTitle_("直近12か月", formatHoursMins_(monthsTotal_(months))) +
+    htmlBarChart_(
+      months.map((m) => m.minutes),
+      months.map((m) => m.month + "月"),
+      { height: 70, gap: 2, labelSize: 10 }
+    )
+  );
+}
+
+function monthsTotal_(months) {
+  return months.reduce((sum, m) => sum + m.minutes, 0);
+}
+
+// 棒グラフ（画像を使わず、高さを指定したセルで描く。Gmail などでも崩れない）
+// options: height（棒の最大の高さ）・gap（棒の間の余白）・labelSize（下の文字の大きさ）・valueLabel（棒の上の文字）
+function htmlBarChart_(values, labels, options) {
   const c = MAIL_COLORS;
-  const maxHeight = 110;
-  const max = Math.max.apply(null, current.dayMinutes);
-  const bars = current.dayMinutes
+  const maxHeight = options.height;
+  const gap = options.gap === undefined ? 4 : options.gap;
+  const labelSize = options.labelSize || 12;
+  const max = Math.max.apply(null, values);
+  const width = (100 / values.length).toFixed(2) + "%";
+  const bars = values
     .map((mins) => {
-      const height = mins > 0 ? Math.max(4, Math.round((mins / max) * maxHeight)) : 2;
+      const height = mins > 0 ? Math.max(3, Math.round((mins / max) * maxHeight)) : 2;
+      const valueHtml = options.valueLabel
+        ? '<div style="font-size:11px;color:' + c.muted + ';white-space:nowrap;">' + options.valueLabel(mins) + "</div>"
+        : "";
       return (
-        '<td valign="bottom" align="center" style="width:14%;padding:0 4px;">' +
-        '<div style="font-size:11px;color:' + c.muted + ';white-space:nowrap;">' + (mins > 0 ? mins + "分" : "") + "</div>" +
-        '<div style="height:' + height + "px;margin-top:4px;border-radius:4px 4px 0 0;background:" +
-        (mins > 0 ? c.accent : c.border) + ';line-height:1px;font-size:1px;">&nbsp;</div>' +
+        '<td valign="bottom" align="center" style="width:' + width + ";padding:0 " + gap + 'px;">' +
+        valueHtml +
+        '<div style="height:' + height + "px;margin-top:4px;border-radius:" + (gap > 1 ? "4px 4px" : "2px 2px") +
+        " 0 0;background:" + (mins > 0 ? c.accent : c.border) + ';line-height:1px;font-size:1px;">&nbsp;</div>' +
         "</td>"
       );
     })
     .join("");
-  // 届く曜日によって週の始まりが変わるので、曜日は日付から求める
-  const labels = current.dayMinutes
+  const labelCells = labels
     .map(
-      (_, i) =>
-        '<td align="center" style="padding-top:6px;font-size:12px;color:' + c.muted + ';">' +
-        weekdayLabel_(addDays_(week.start, i)) + "</td>"
+      (label) =>
+        '<td align="center" style="padding-top:6px;font-size:' + labelSize + "px;color:" + c.muted +
+        ';white-space:nowrap;">' + label + "</td>"
     )
     .join("");
 
   return (
-    htmlSectionTitle_("曜日ごとの作業時間") +
-    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="height:' + (maxHeight + 24) + 'px;">' +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="height:' +
+    (maxHeight + (options.valueLabel ? 24 : 8)) + 'px;">' +
     "<tr>" + bars + "</tr>" +
-    '<tr><td colspan="7" style="border-top:1px solid ' + c.border + ';font-size:1px;line-height:1px;">&nbsp;</td></tr>' +
-    "<tr>" + labels + "</tr></table>"
+    '<tr><td colspan="' + values.length + '" style="border-top:1px solid ' + c.border +
+    ';font-size:1px;line-height:1px;">&nbsp;</td></tr>' +
+    "<tr>" + labelCells + "</tr></table>"
   );
 }
 
@@ -730,10 +791,12 @@ function htmlTaskBars_(current) {
   );
 }
 
-function htmlSectionTitle_(title) {
-  return (
-    '<div style="margin:28px 0 12px;font-size:14px;font-weight:bold;">' + title + "</div>"
-  );
+// 見出し。note を渡すと、右側に小さく添える（「直近30日　12時間30分」など）
+function htmlSectionTitle_(title, note) {
+  const noteHtml = note
+    ? '<span style="margin-left:8px;font-size:13px;font-weight:normal;color:' + MAIL_COLORS.muted + ';">' + note + "</span>"
+    : "";
+  return '<div style="margin:28px 0 12px;font-size:14px;font-weight:bold;">' + title + noteHtml + "</div>";
 }
 
 function escapeHtml_(text) {
@@ -745,14 +808,78 @@ function escapeHtml_(text) {
     .replace(/'/g, "&#39;");
 }
 
-function cheerMessage_(current, previous) {
+// ==========================================
+// レポートの「ひとこと」（その週の作業時間に合わせて、くすっと笑える言葉を添える）
+// 0分の週ほど責めずに、次の「5分だけ」へ誘う。文はここだけで決めているので、自由に書き換えてよい
+// ==========================================
+const CHEER_MESSAGES = {
+  // 2週続けて0分
+  zeroAgain: [
+    "2週連続で0分。アプリがちょっと寂しがっています。……そのままで良いのか？ だまされたと思って、5分だけ。",
+    "0分の記録が2週続いています（悪い意味で連続記録更新中）。この記録、5分で止められます。",
+    "タイマーが2週間ほど暇そうにしています。そのままで良いのか？ 5分だけ相手をしてあげてください。",
+  ],
+  // 今週は0分（前の週は記録あり）
+  zero: [
+    "今週は0分。充電期間ということにしておきましょう。……そろそろ満タンでは？",
+    "今週は0分でした。「Just do it.」のはずが、今週は「Just rest.」だったようです。",
+    "今週の記録は0分。先週のあなたが、ちょっと首をかしげています。まずは5分だけ。",
+  ],
+  // 7日すべてに記録あり
+  everyDay: [
+    "7日すべてに記録あり。もはや習慣と呼んでいいレベルです。",
+    "7日連続で記録しました。カレンダーに花丸をあげたい気分です。",
+  ],
+  // 前の週の2倍以上
+  doubled: [
+    "前の週の2倍以上！ 何があったんですか（いい意味で）。",
+    "前の週の2倍以上。今週のあなた、ちょっと別人です。",
+  ],
+  // 1〜29分
+  small: [
+    "ゼロじゃない。それがすべての始まりです。来週はあと5分だけ上乗せを。",
+    "小さくても一歩は一歩。来週はこの記録を、こっそり超えてみましょう。",
+  ],
+  // 30分〜2時間
+  warm: [
+    "エンジンがかかってきました。このまま冷やさないように。",
+    "いい感じに温まってきました。来週もこの火を消さないように。",
+  ],
+  // 2〜5時間
+  solid: [
+    "なかなかの積み上げです。来週の自分にちょっと自慢できます。",
+    "しっかり積み上がっています。このペース、なかなか真似できません。",
+  ],
+  // 5時間以上
+  intense: [
+    "今週はかなり本気でしたね。休むのも作戦のうちです。",
+    "今週のがんばりには、レポートを書いている側も驚いています。ほどよく休んでくださいね。",
+  ],
+};
+
+// どのひとことにするか（上から順に、最初に当てはまったもの）
+function cheerKind_(current, previous) {
   if (current.totalMinutes === 0) {
-    return "この1週間は記録がありませんでした。まずは「5分だけやる」から始めてみましょう。";
+    return previous.totalMinutes === 0 ? "zeroAgain" : "zero";
   }
-  if (current.totalMinutes > previous.totalMinutes) {
-    return "前の週より積み上がっています！この調子で続けましょう。";
-  }
-  return "これからも5分から積み上げていきましょう。続けることがいちばんの力です。";
+  if (current.days === 7) return "everyDay";
+  if (previous.totalMinutes > 0 && current.totalMinutes >= previous.totalMinutes * 2) return "doubled";
+  if (current.totalMinutes < 30) return "small";
+  if (current.totalMinutes < 120) return "warm";
+  if (current.totalMinutes < 300) return "solid";
+  return "intense";
+}
+
+// 毎週同じ文にならないよう、週ごとに順番に変える（同じ週なら、テストメールを何度送っても同じ文）
+function cheerMessage_(report) {
+  const messages = CHEER_MESSAGES[cheerKind_(report.current, report.previous)];
+  const weekNumber = Math.floor(daysSinceEpoch_(report.week.start) / 7);
+  return messages[weekNumber % messages.length];
+}
+
+// 1970/1/1 から何日目か（日付だけで数える。夏時間などで時刻がずれても日数が変わらないように）
+function daysSinceEpoch_(date) {
+  return Math.round(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86400000);
 }
 
 
@@ -901,15 +1028,50 @@ function sign_(value) {
 // レポートの集計期間（start 〜 lastDay の7日間）と、比較に使うその前の7日間（prevStart 〜）
 // 朝・昼に届く場合は前日まで、夕方以降に届く場合はその日までを集計する
 // （月曜 9時なら先週の月〜日、日曜 21時ならその週の月〜日）
+// あわせて、アプリの振り返りの「月」「年」と同じ期間も返す
+//   monthStart 〜：直近30日（1日ごと）　yearStart 〜：直近12か月（lastDay の月を含む12か月。1か月ごと）
 function getReportRange_(sendAt) {
   const includesToday = sendAt.getHours() >= INCLUDE_TODAY_FROM_HOUR;
   const end = new Date(sendAt.getFullYear(), sendAt.getMonth(), sendAt.getDate() + (includesToday ? 1 : 0));
+  const lastDay = addDays_(end, -1);
   return {
+    yearStart: new Date(lastDay.getFullYear(), lastDay.getMonth() - (REPORT_MONTHS - 1), 1),
+    monthStart: addDays_(end, -REPORT_RECENT_DAYS),
     prevStart: addDays_(end, -14),
     start: addDays_(end, -7),
     end: end,
-    lastDay: addDays_(end, -1),
+    lastDay: lastDay,
   };
+}
+
+// レポートに載せる数字をまとめて計算する（この1週間・前の週・直近30日・直近12か月）
+function buildReport_(logs, dueAt) {
+  const week = getReportRange_(dueAt);
+  return {
+    week: week,
+    current: summarize_(logs, week.start, week.end),
+    previous: summarize_(logs, week.prevStart, week.start),
+    recent: summarize_(logs, week.monthStart, week.end),
+    months: summarizeMonths_(logs, week.yearStart, week.end),
+  };
+}
+
+// 1か月ごとの合計（yearStart の月から12か月分）。{ year, month, minutes } の配列
+function summarizeMonths_(logs, yearStart, end) {
+  const months = [];
+  for (let i = 0; i < REPORT_MONTHS; i++) {
+    const first = new Date(yearStart.getFullYear(), yearStart.getMonth() + i, 1);
+    months.push({ year: first.getFullYear(), month: first.getMonth() + 1, minutes: 0 });
+  }
+  logs.forEach((log) => {
+    if (log.date < yearStart || log.date >= end) {
+      return;
+    }
+    const index =
+      (log.date.getFullYear() - yearStart.getFullYear()) * 12 + (log.date.getMonth() - yearStart.getMonth());
+    months[index].minutes += log.minutes;
+  });
+  return months;
 }
 
 function groupLogsByUser_(rows, from, to) {

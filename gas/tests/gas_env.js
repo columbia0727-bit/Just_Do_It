@@ -130,7 +130,7 @@
       console: { log() {}, warn() {}, error() {} },
       Date: FakeDate,
     };
-    const exported = ["doPost", "sendDueReports", "confirmUnsubscribe", "sha256Hex_"];
+    const exported = ["doPost", "sendDueReports", "confirmUnsubscribe", "sha256Hex_", "cheerKind_", "CHEER_MESSAGES"];
     const api = new Function(...Object.keys(env), `${code}\nreturn { ${exported.join(", ")} };`)(...Object.values(env));
 
     const gas = {

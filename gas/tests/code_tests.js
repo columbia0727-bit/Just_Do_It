@@ -200,6 +200,70 @@
     ]);
   });
 
+  test("レポートに直近30日・直近12か月のグラフと合計が入る（アプリの振り返りの「月」「年」と同じ期間）", (code) => {
+    const gas = global.GasTest.createEnv(code, at(2026, 10, 14, 10, 30));
+    const token = gas.signUp("me@example.com", { weekday: 6, hour: 21 }); // 日曜 21時（その日の記録まで集計）
+    const log = (datetime, minutes, ch) =>
+      gas.post({ action: "log", token, datetime, task: "制作", minutes, id: id(ch) });
+    log("2026-10-18 09:00:00", 60, "a"); // この1週間（10/12〜10/18）
+    log("2026-09-19 09:00:00", 30, "b"); // 直近30日の最初の日
+    log("2026-09-18 09:00:00", 5, "c"); // 30日より前（12か月には入る）
+    log("2025-11-01 09:00:00", 120, "d"); // 12か月の最初の月（2025年11月）
+    log("2025-10-31 09:00:00", 45, "e"); // 12か月より前
+    runHourly(gas, at(2026, 10, 14, 11), at(2026, 10, 18, 22)); // 毎週の定期レポート
+    const scheduled = gas.mails.find((m) => m.subject.includes("レポート"));
+    gas.setNow(at(2026, 10, 18, 21, 30));
+    gas.post({ action: "send_test_report", token }); // テストメール（同じ期間になる）
+    const tested = gas.mails[gas.mails.length - 1];
+    assertTrue(tested.subject.startsWith("【テスト】"), "テストメールが届いていない");
+    assertEqual(scheduled.htmlBody, tested.htmlBody, "定期レポートとテストメールで内容が違う");
+
+    const mail = scheduled;
+    assertTrue(mail.body.includes("- 直近30日 : 1時間 30分"), "テキスト版の直近30日が違う\n" + mail.body);
+    assertTrue(mail.body.includes("- 直近12か月 : 3時間 35分"), "テキスト版の直近12か月が違う\n" + mail.body);
+    assertTrue(/直近30日<span[^>]*>1時間 30分</.test(mail.htmlBody), "HTML の直近30日の合計が違う");
+    assertTrue(/直近12か月<span[^>]*>3時間 35分</.test(mail.htmlBody), "HTML の直近12か月の合計が違う");
+    const yearChart = mail.htmlBody.slice(mail.htmlBody.indexOf("直近12か月"));
+    const monthLabels = [...yearChart.matchAll(/>(\d+)月</g)].map((m) => Number(m[1]));
+    assertEqual(monthLabels, [11, 12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], "12か月の並びが違う");
+    const recentChart = mail.htmlBody.slice(mail.htmlBody.indexOf("直近30日"), mail.htmlBody.indexOf("直近12か月"));
+    const dayLabels = [...recentChart.matchAll(/>(\d+\/\d+)</g)].map((m) => m[1]);
+    assertEqual(dayLabels, ["9/23", "9/28", "10/3", "10/8", "10/13", "10/18"], "直近30日の日付（5日おき・最新の日を含む）が違う");
+  });
+
+  test("ひとことは作業時間に合わせて選び、メールの最初に入る", (code) => {
+    const gas = global.GasTest.createEnv(code);
+    const week = (totalMinutes, days) => ({ totalMinutes, days });
+    const cases = [
+      [week(0, 0), week(0, 0), "zeroAgain"],
+      [week(0, 0), week(30, 1), "zero"],
+      [week(70, 7), week(10, 1), "everyDay"], // 7日すべてが、2倍以上より優先
+      [week(60, 3), week(30, 2), "doubled"],
+      [week(20, 1), week(0, 0), "small"], // 前の週が0分なら「2倍」にはしない
+      [week(29, 1), week(20, 1), "small"],
+      [week(30, 2), week(20, 1), "warm"],
+      [week(119, 2), week(100, 2), "warm"],
+      [week(120, 2), week(100, 2), "solid"],
+      [week(300, 5), week(200, 5), "intense"],
+    ];
+    cases.forEach(([current, previous, kind]) =>
+      assertEqual(gas.api.cheerKind_(current, previous), kind, JSON.stringify([current, previous]))
+    );
+
+    // 記録のない人に届くレポートは、2週連続0分のひとことで始まる。同じ週なら何度送っても同じ文
+    const token = gas.signUp("me@example.com");
+    gas.post({ action: "send_test_report", token });
+    gas.setNow(at(2026, 10, 14, 12, 30));
+    gas.post({ action: "send_test_report", token });
+    const [first, second] = gas.mails.filter((m) => m.subject.startsWith("【テスト】"));
+    const message = gas.api.CHEER_MESSAGES.zeroAgain.find((text) => first.body.includes(text));
+    assertTrue(message, "2週連続0分のひとことが入っていない\n" + first.body);
+    assertTrue(first.body.indexOf(message) < first.body.indexOf("[この1週間のサマリー]"), "ひとことがテキスト版の最初にない");
+    const htmlAt = first.htmlBody.indexOf(message);
+    assertTrue(htmlAt >= 0 && htmlAt < first.htmlBody.indexOf("この1週間の作業時間"), "ひとことが HTML の最初にない");
+    assertTrue(second.body.includes(message), "同じ週なのに、ひとことが変わった");
+  });
+
   test("届くタイミングを変えた直後に、同じ週のレポートが2通届かない", (code) => {
     const gas = global.GasTest.createEnv(code, at(2026, 10, 14, 10, 30));
     const token = gas.signUp("me@example.com", { weekday: 6, hour: 21 });
