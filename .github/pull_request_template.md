@@ -7,5 +7,5 @@
 ## 確かめたこと
 - [ ] GitHub Actions がすべて成功している（ruff・mypy・テスト・GAS のテスト・Windows / macOS のビルドと --self-test）
 - [ ] 画面を変えた場合：ライト・ダークの両方で表示を確かめた
-- [ ] 配信サービス（`gas/`）を変えた場合：`gas/tests` にテストを足した
+- [ ] 配信サービス（`gas/`）を変えた場合：`gas/tests` にテストを足した（main に取り込むと、そのまま本番に自動でデプロイされる）
 - [ ] 利用者に関わる変更なら、[CHANGELOG.md](../blob/main/CHANGELOG.md) の「未リリース」に書いた

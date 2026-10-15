@@ -25,4 +25,10 @@ dist/
 # OS
 .DS_Store
 Thumbs.db
+
+# テストのカバレッジの結果
 .coverage
+
+# clasp（GAS のデプロイ）の設定。スクリプト ID や認証情報を含むので、コミットしない
+.clasp.json
+.clasprc.json

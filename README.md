@@ -208,7 +208,7 @@ python -m mypy
 node gas/tests/run.js
 ```
 型のチェックは、使っている OS として行われます。ほかの OS 向けの処理も確かめるには `--platform win32`（`linux`・`darwin`）を付けます（GitHub Actions では3つとも確かめます）。
-GAS のテストは、本物の `Code.js` を模擬環境（スプレッドシート・メール・時計を手元で再現したもの）に読み込み、登録・同期・レポートの配信タイミングなどを確かめます。GitHub Actions では、これらをすべて毎回実行します。
+GAS のテストは、本物の配信サービスのコード（`gas/report_service/*.js`）を模擬環境（スプレッドシート・メール・時計を手元で再現したもの）に読み込み、登録・同期・レポートの配信タイミングなどを確かめます。GitHub Actions では、これらをすべて毎回実行します。
 画面を表示するテストは、ディスプレイのない環境では自動でスキップされます（GitHub Actions では仮想ディスプレイ上で実行）。
 
 依存ライブラリは、動作を確かめたバージョンに固定しています（`requirements.txt`）。新しいバージョンが出ると Dependabot がプルリクエストを作り、GitHub Actions のテストと配布版の動作確認が通ってから取り込みます。ソースから起動した場合、記録と設定は `main.py` と同じフォルダに保存されます。
@@ -246,12 +246,22 @@ GitHub Actions（[`build.yml`](.github/workflows/build.yml)）が、テスト �
 1. **配信サービス専用の Google アカウント**で、Google スプレッドシートを新規作成し、「拡張機能」→「Apps Script」を開く
    - メールはこのアカウントから送られる（差出人として見える）ため、普段使いのアカウントは使わない
    - 複数のアカウントにログインしていると Apps Script が開けないことがあるので、シークレットウィンドウなどで作業する
-2. [`gas/report_service/Code.js`](gas/report_service/Code.js) を貼り付ける。プロジェクトの設定で「appsscript.json をエディタで表示」をオンにし、[`appsscript.json`](gas/report_service/appsscript.json) の内容も貼り付ける
+2. [`gas/report_service/`](gas/report_service/) の `.js` ファイルをすべて、同じ名前のスクリプトとして貼り付ける。プロジェクトの設定で「appsscript.json をエディタで表示」をオンにし、[`appsscript.json`](gas/report_service/appsscript.json) の内容も貼り付ける（下の自動デプロイを設定すれば、この手順は1回目の `push` で済む）
 3. 「デプロイ」→「新しいデプロイ」→「ウェブアプリ」で、実行ユーザー「自分」、アクセスできるユーザー「全員」としてデプロイする
 4. エディタで `createReportTrigger` を1回実行し、権限を承認する（1時間ごとに、届ける時刻を過ぎた利用者へレポートを送る）
 5. 発行された URL を [`justdoit/report_service.py`](justdoit/report_service.py) の `REPORT_SERVICE_URL` に設定してビルドする（開発中は環境変数 `JUSTDOIT_REPORT_URL` でも指定できる）
 
-**`Code.js` を直したとき**
+**自動デプロイ（GitHub Actions + clasp）**
+
+`gas/report_service/` を変えて main に取り込むと、[`deploy-gas.yml`](.github/workflows/deploy-gas.yml) がテストを通してから、今のデプロイを新しいバージョンに更新する（URL は変わらない）。最初に1回だけ、次の準備をする（すべて無料）。
+1. 配信サービス用の Google アカウントで [Apps Script の設定](https://script.google.com/home/usersettings) を開き、「Google Apps Script API」をオンにする
+2. Node.js を入れた PC で `npx @google/clasp@2.4.2 login` を実行し、同じアカウントでログインする（ホームフォルダに `.clasprc.json` ができる）
+3. GitHub の「Settings」→「Secrets and variables」→「Actions」に、次の3つを登録する
+   - `CLASPRC_JSON`：`.clasprc.json` の中身
+   - `GAS_SCRIPT_ID`：Apps Script の「プロジェクトの設定」にあるスクリプト ID
+   - `GAS_DEPLOYMENT_ID`：「デプロイを管理」にある、ウェブアプリのデプロイ ID
+
+**手で直すとき（自動デプロイを使わない場合）**
 - 「デプロイ」→「デプロイを管理」→ 鉛筆 → バージョン「新バージョン」でデプロイし直す（URL は変わらない）
 - 「新しいデプロイ」にすると URL が変わり、配布済みのアプリから届かなくなるので注意
 - 「毎週月曜 9時」に送っていた古いバージョンから更新した場合は、`createReportTrigger` をもう一度実行する
