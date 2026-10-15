@@ -287,7 +287,8 @@ class PillButton(tk.Label):
     """角の丸いボタン。width を省略すると、pack(fill="x") などで広げた幅に合わせて描き直す
 
     kind: "primary"（塗りつぶし・1画面に1つ）/ "secondary"（枠線）/ "chip"（小さな候補）/
-          "tab"・"tab_active"（切り替えタブ）/ "select"（選択欄。角丸を小さくして入力欄に似せる）
+          "chip_disabled"（今は押せない候補）/ "tab"・"tab_active"（切り替えタブ）/
+          "select"（選択欄。角丸を小さくして入力欄に似せる）
     マウスを乗せたときはカーソルを変えず、ボタンの色だけを変える（指の形のカーソルは Mac で不自然に見えるため）
     Tab キーで選ぶと、文字色の枠で囲んで示し、Enter・スペースキーで押せる
     """
@@ -304,6 +305,7 @@ class PillButton(tk.Label):
             "primary": (12, 42, True),
             "secondary": (12, 42, False),
             "chip": (10, 28, False),
+            "chip_disabled": (10, 28, False),
             "tab": (10, 28, False),
             "tab_active": (10, 28, True),
             "select": (11, 32, False),
@@ -312,7 +314,9 @@ class PillButton(tk.Label):
             "primary": (C.accent, C.accent_hover, None, C.on_accent),
             "secondary": (C.bg, C.subtle, C.border, C.text),
             "chip": (C.subtle, C.subtle_hover, None, C.text),
-            "tab": (C.bg, C.subtle, None, C.muted),
+            # 今は押せない候補（あることには気づけるよう、消さずに枠線だけの薄い色で出す）
+            "chip_disabled": (C.bg, C.bg, C.border, C.muted),
+            "tab":(C.bg, C.subtle, None, C.muted),
             "tab_active": (C.subtle, C.subtle, None, C.text),
             "select": (C.surface, C.subtle, C.border, C.text),
         }[kind]
@@ -334,7 +338,7 @@ class PillButton(tk.Label):
         self.images: dict[tuple[int, bool, bool], ImageTk.PhotoImage] = {}
         self.hovering = False
         self.focused = False
-        if width is None and kind in ("chip", "tab", "tab_active"):
+        if width is None and kind in ("chip", "chip_disabled", "tab", "tab_active"):
             # 文字の幅に合わせる
             width = round(tkfont.Font(font=self["font"]).measure(text) / _scale) + 28
         self.fixed_width = px(width) if width else None

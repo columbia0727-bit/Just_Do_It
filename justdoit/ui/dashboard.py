@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from functools import partial
 import platform
 import tkinter as tk
 from tkinter import messagebox
@@ -91,7 +92,11 @@ def show_dashboard(app: JustDoItApp, period: str | None = None, offset: int | No
 
 
 def build_period_nav(app: JustDoItApp, header: tk.Frame, records: pd.DataFrame, summary: PeriodSummary) -> None:
-    """「‹ 前へ」「次へ ›」（← → キーでも動かせる）。直近の期間では「次へ」、記録が無い過去では「前へ」を出さない"""
+    """「‹ 前へ」「次へ ›」（← → キーでも動かせる）
+
+    直近の期間では「次へ」、それより前に記録が無いときは「前へ」を押せない。
+    押せないときも薄い色で出しておく（消すと、前の期間を見られること自体に気づけないため）。
+    """
     nav = tk.Frame(header, bg=header["bg"])
     nav.pack(side="left", padx=(app.px(12), 0))
     has_earlier = records["日時"].min().date() < summary.start
@@ -101,10 +106,11 @@ def build_period_nav(app: JustDoItApp, header: tk.Frame, records: pd.DataFrame, 
         if (step > 0 and has_earlier) or (step < 0 and has_later):
             show_dashboard(app, offset=app.dashboard_offset + step)
 
-    if has_earlier:
-        PillButton(nav, "‹ 前へ", lambda: go(1), kind="chip").pack(side="left", padx=(0, app.px(4)))
-    if has_later:
-        PillButton(nav, "次へ ›", lambda: go(-1), kind="chip").pack(side="left")
+    for text, step, enabled in (("‹ 前へ", 1, has_earlier), ("次へ ›", -1, has_later)):
+        if enabled:
+            PillButton(nav, text, partial(go, step), kind="chip").pack(side="left", padx=(0, app.px(4)))
+        else:
+            PillButton(nav, text, None, kind="chip_disabled").pack(side="left", padx=(0, app.px(4)))
     app.bind_key("<Left>", lambda: go(1))
     app.bind_key("<Right>", lambda: go(-1))
 
