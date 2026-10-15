@@ -30,7 +30,7 @@ jobs:
       - run: python -m mypy --platform win32
       - run: python -m mypy --platform darwin
 
-  # 週次レポート配信サービス（GAS）のテスト。本物の Code.js を模擬環境に読み込んで確かめる
+  # 週次レポート配信サービス（GAS）のテスト。本物の配信サービスのコード（gas/report_service/*.js）を模擬環境に読み込んで確かめる
   gas-test:
     runs-on: ubuntu-latest
     steps:

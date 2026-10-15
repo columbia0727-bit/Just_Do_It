@@ -1,0 +1,59 @@
+name: Deploy report service (GAS)
+
+# 週次レポート配信サービス（gas/report_service）を main に取り込むと、テストを通してから Google Apps Script にデプロイする。
+# 今のデプロイ（ウェブアプリの URL）を新しいバージョンに更新するので、アプリに埋め込んだ URL は変わらない。
+#
+# 必要なリポジトリのシークレット（Settings → Secrets and variables → Actions）
+#   CLASPRC_JSON      : 配信サービス用の Google アカウントで `clasp login` したときにできる ~/.clasprc.json の中身
+#   GAS_SCRIPT_ID     : Apps Script の「プロジェクトの設定」にあるスクリプト ID
+#   GAS_DEPLOYMENT_ID : 「デプロイを管理」にある、ウェブアプリのデプロイ ID
+# シークレットが無いときは、デプロイせずに知らせるだけにする（フォークしたリポジトリなどで失敗にしないため）
+on:
+  push:
+    branches: [main]
+    paths: ["gas/report_service/**", ".github/workflows/deploy-gas.yml"]
+  workflow_dispatch:
+
+# 2つのデプロイが同時に走らないようにする（あとから来たものは、前のものが終わるまで待つ）
+concurrency:
+  group: deploy-gas
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+      GAS_SCRIPT_ID: ${{ secrets.GAS_SCRIPT_ID }}
+      GAS_DEPLOYMENT_ID: ${{ secrets.GAS_DEPLOYMENT_ID }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - run: node gas/tests/run.js
+
+      - name: Check secrets
+        id: secrets
+        run: |
+          if [ -z "$CLASPRC_JSON" ] || [ -z "$GAS_SCRIPT_ID" ] || [ -z "$GAS_DEPLOYMENT_ID" ]; then
+            echo "::notice::シークレット（CLASPRC_JSON・GAS_SCRIPT_ID・GAS_DEPLOYMENT_ID）が無いので、デプロイしません"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy with clasp
+        if: steps.secrets.outputs.ready == 'true'
+        run: |
+          printf '%s' "$CLASPRC_JSON" > ~/.clasprc.json
+          printf '{"scriptId":"%s","rootDir":"gas/report_service"}' "$GAS_SCRIPT_ID" > .clasp.json
+          # appsscript.json（設定）も含めて、ファイルをすべて置き換える
+          npx --yes @google/clasp@2.4.2 push --force
+          # 今のデプロイを新しいバージョンに更新する（URL は変わらない）
+          npx --yes @google/clasp@2.4.2 deploy --deploymentId "$GAS_DEPLOYMENT_ID" \
+            --description "${GITHUB_SHA::7} $(git log -1 --format=%s)"
+          echo "デプロイしました（${GITHUB_SHA::7}）" >> "$GITHUB_STEP_SUMMARY"

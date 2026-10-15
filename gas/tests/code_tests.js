@@ -1,5 +1,5 @@
-// 週次レポート配信サービス（gas/report_service/Code.js）のテスト
-// GasTest.createEnv で本物の Code.js を模擬環境に読み込み、アプリと同じ形でリクエストを送って確かめる
+// 週次レポート配信サービス（gas/report_service/*.js）のテスト
+// GasTest.createEnv で本物のコードを模擬環境に読み込み、アプリと同じ形でリクエストを送って確かめる
 (function (global) {
   const tests = [];
   const test = (name, fn) => tests.push({ name, fn });

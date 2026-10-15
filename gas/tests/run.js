@@ -7,7 +7,10 @@ const vm = require("vm");
 for (const file of ["sha256.js", "gas_env.js", "code_tests.js"]) {
   vm.runInThisContext(fs.readFileSync(path.join(__dirname, file), "utf8"), { filename: file });
 }
-const code = fs.readFileSync(path.join(__dirname, "..", "report_service", "Code.js"), "utf8");
+// GAS と同じく、配信サービスのファイルをすべて1つの場所に読み込む
+const serviceDir = path.join(__dirname, "..", "report_service");
+const files = fs.readdirSync(serviceDir).filter((file) => file.endsWith(".js")).sort();
+const code = files.map((file) => fs.readFileSync(path.join(serviceDir, file), "utf8")).join("\n");
 
 let failed = 0;
 for (const { name, fn } of globalThis.GasTest.tests) {
@@ -19,5 +22,5 @@ for (const { name, fn } of globalThis.GasTest.tests) {
     console.log(`FAIL ${name}\n${error.stack}`);
   }
 }
-console.log(`\n${globalThis.GasTest.tests.length - failed} / ${globalThis.GasTest.tests.length} passed`);
+console.log(`\n${globalThis.GasTest.tests.length - failed} / ${globalThis.GasTest.tests.length} passed（${files.join("・")}）`);
 process.exit(failed ? 1 : 0);
