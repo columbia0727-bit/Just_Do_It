@@ -6,7 +6,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from justdoit import records  # noqa: E402
+from justdoit import records, report_service  # noqa: E402
 
 
 class ParseMinutesTest(unittest.TestCase):
@@ -157,6 +157,17 @@ class EditRecordsTest(unittest.TestCase):
         self.assertIn("日付", records.validate_when("10/13", "9:05", now))
         self.assertIn("時刻", records.validate_when("2026/10/13", "25:00", now))
         self.assertIn("これから先", records.validate_when("2026/10/14", "12:01", now))
+
+    def test_recorded_at_on_uses_the_time_of_recording(self):
+        now = datetime(2026, 10, 15, 10, 44, 27, 123456)
+        self.assertEqual(records.recorded_at_on(date(2026, 10, 13), now), datetime(2026, 10, 13, 10, 44, 27))
+        self.assertEqual(records.recorded_at_on(date(2026, 10, 15), now), datetime(2026, 10, 15, 10, 44, 27))
+        # 同じ日に同じ作業・同じ時間を続けて記録しても、時刻が違うので別の記録（別の ID）になる
+        later = records.recorded_at_on(date(2026, 10, 13), now + timedelta(seconds=30))
+        log = report_service.make_log
+        first = log(records.recorded_at_on(date(2026, 10, 13), now).strftime(records.DATETIME_FORMAT), "読書", 20)
+        second = log(later.strftime(records.DATETIME_FORMAT), "読書", 20)
+        self.assertNotEqual(report_service.log_id(first), report_service.log_id(second))
 
     def test_day_label(self):
         today = date(2026, 10, 14)

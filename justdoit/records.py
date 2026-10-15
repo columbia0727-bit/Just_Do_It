@@ -118,6 +118,15 @@ WEEKDAY_NAMES = "月火水木金土日"
 RECENT_DAYS = 31  # 手動記録で選べる日付（今日から何日前まで）
 
 
+def recorded_at_on(day: date, now: datetime) -> datetime:
+    """手動記録の日時（選んだ日付に、記録した瞬間の時刻を付ける）
+
+    決まった時刻（12:00 など）にしないのは、記録の ID（report_service.log_id）が日時・作業内容・時間から
+    作られるため。同じ日に同じ作業・同じ時間を2回記録すると、同期で1件にまとめられてしまう。
+    """
+    return datetime.combine(day, now.time()).replace(microsecond=0)
+
+
 def day_label(day: date, today: date) -> str:
     """日付の表示（例: 「今日 10/14（水）」「昨日 10/13（火）」「10/1（水）」）"""
     prefix = {0: "今日 ", 1: "昨日 "}.get((today - day).days, "")

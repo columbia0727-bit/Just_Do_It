@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 from PIL import ImageTk
 
 from justdoit import config
-from justdoit.records import RECENT_DAYS, load_records, recent_tasks, validate_record, validate_when
+from justdoit.records import RECENT_DAYS, load_records, recent_tasks, recorded_at_on, validate_record
 from justdoit.ui.datepicker import DatePicker
 from justdoit.ui.theme import (
     C,
@@ -259,26 +259,25 @@ def show_break_timer(app: JustDoItApp) -> None:
 # 手動記録（タイマーを使わなかった作業を後から追加する）
 # ==========================================
 def show_manual_record(app: JustDoItApp) -> None:
-    """タイマーを使わなかった作業を記録する（日付と時刻も選べるので、前の日の作業もあとから記録できる）"""
+    """タイマーを使わなかった作業を記録する（日付を選べるので、前の日の作業もあとから記録できる）
+
+    時刻は入力しない（振り返り・週次レポートは日ごとに集計するため）。細かく直したいときは記録一覧で直せる。
+    """
     screen = app.make_screen(MANUAL_RECORD_SIZE)
     app.make_header(screen, "記録する")
 
     make_label(screen, "やったこと", size=11).pack(anchor="w", pady=(0, 4))
     task_entry = make_task_input(app, screen, content_width=MANUAL_RECORD_SIZE[0] - 48)
 
-    now = datetime.now()
-    today = now.date()
+    today = datetime.now().date()
     fields = tk.Frame(screen, bg=screen["bg"])
     fields.pack(anchor="w", pady=(12, 0))
-    for column, text in enumerate(["日付", "時刻", "時間（分）"]):
+    for column, text in enumerate(["日付", "時間（分）"]):
         make_label(fields, text, size=11).grid(row=0, column=column, sticky="w", padx=(0, 10), pady=(0, 4))
     day_picker = DatePicker(fields, today, first=today - timedelta(days=RECENT_DAYS), last=today)
     day_picker.grid(row=1, column=0, sticky="w", padx=(0, 10))
-    time_entry = make_entry(fields, width=6)
-    time_entry.insert(0, f"{now:%H:%M}")
-    time_entry.grid(row=1, column=1, sticky="w", padx=(0, 10), ipady=4)
     mins_entry = make_entry(fields, width=6)
-    mins_entry.grid(row=1, column=2, sticky="w", ipady=4)
+    mins_entry.grid(row=1, column=1, sticky="w", ipady=4)
 
     error_label = make_label(screen, size=10, color=C.error)
     error_label.pack(anchor="w", pady=(4, 0))
@@ -289,12 +288,7 @@ def show_manual_record(app: JustDoItApp) -> None:
             error_label.config(text=result)
             (mins_entry if task_entry.get().strip() else task_entry).focus_set()
             return
-        when = validate_when(f"{day_picker.get():%Y/%m/%d}", time_entry.get())
-        if isinstance(when, str):
-            error_label.config(text=when)
-            time_entry.focus_set()
-            return
-        if app.save_record(*result, recorded_at=when):
+        if app.save_record(*result, recorded_at=recorded_at_on(day_picker.get(), datetime.now())):
             app.show_main_menu()
 
     make_button(screen, "記録する", save, primary=True).pack(side="bottom", fill="x")
@@ -302,5 +296,4 @@ def show_manual_record(app: JustDoItApp) -> None:
     # Enterキーで次の欄へ・保存
     task_entry.bind("<Return>", lambda event: mins_entry.focus_set())
     mins_entry.bind("<Return>", save)
-    time_entry.bind("<Return>", save)
     app.close_guard = lambda: confirm_discard(app, task_entry)
