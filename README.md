@@ -181,6 +181,7 @@ just-do-it/
 │   └── ui/                    # 画面（app・theme・datepicker・timer・history・dashboard・settings・report_settings）
 ├── gas/report_service/        # 週次レポート配信サービス（Google Apps Script）
 ├── tests/                     # 単体テスト
+├── tools/release_notes.py     # CHANGELOG.md からリリースノートを作る（リリース時に Actions が実行）
 ├── docs/                      # README 用スクリーンショット（サンプルの記録で撮影）
 ├── JustDoIt.spec              # ビルド設定
 └── .github/workflows/build.yml
@@ -224,11 +225,18 @@ pyinstaller --noconfirm JustDoIt.spec
 dist/JustDoIt/JustDoIt.exe --self-test
 ```
 
-### リリース
-1. [`justdoit/__init__.py`](justdoit/__init__.py) の `__version__` を次のバージョン（例：`1.3.0`）にして、コミット・push する
-2. GitHub の **Releases →「Draft a new release」** で、同じ番号のタグ（例：`v1.3.0`）を作って公開する
+### 開発の進め方
+1. 変更ごとにブランチを作る（例：`feature/weekly-goal`）
+2. プルリクエストを作ると、GitHub Actions がテスト・ビルド・配布版の動作確認を行う（[ひな形](.github/pull_request_template.md)の確認項目も見る）
+3. すべて成功したら main に取り込む
 
-GitHub Actions（[`build.yml`](.github/workflows/build.yml)）が、テスト → Windows・macOS のビルド → 配布版の動作確認 → Release への添付まで自動で行います。タグと `__version__` が違う場合は、途中で止まります。
+利用者に関わる変更は、[CHANGELOG.md](CHANGELOG.md) の「未リリース」に書いておきます（リリースノートになります）。テストのカバレッジ（テストが通ったコードの割合）は、Actions の各実行の Summary に表で出ます。集計・同期・通信の処理（`records.py`・`sync.py`・`report_service.py` など）は 9 割以上をテストで通しています。画面のコードは、ビルドしたアプリの `--self-test` が Windows・macOS で全画面を開いて確かめています。
+
+### リリース
+1. [`justdoit/__init__.py`](justdoit/__init__.py) の `__version__` を次のバージョン（例：`1.5.0`）にし、[CHANGELOG.md](CHANGELOG.md) の「未リリース」を `## [1.5.0] - 日付` にして main に取り込む
+2. GitHub の **Releases →「Draft a new release」** で、同じ番号のタグ（例：`v1.5.0`）を作って公開する（説明文は空でよい）
+
+GitHub Actions（[`build.yml`](.github/workflows/build.yml)）が、テスト → Windows・macOS のビルド → 配布版の動作確認 → Release への添付まで自動で行い、説明文には CHANGELOG.md のそのバージョンの部分（[`tools/release_notes.py`](tools/release_notes.py)）が入ります。タグと `__version__` が違う場合や、CHANGELOG.md にそのバージョンが無い場合は、途中で止まります。
 
 <details>
 <summary><b>週次レポート配信サービス（GAS）のデプロイ手順</b></summary>
