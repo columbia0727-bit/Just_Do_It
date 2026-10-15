@@ -59,7 +59,7 @@ def fetch_server_state() -> ServerState:
     if report_service.load_queue(queue_path):
         raise ReportServiceError("サーバーに接続できませんでした。時間をおいて再度お試しください", "network")
 
-    token = config.load_config().get("report_token")
+    token = config.get_report_token()
     result = report_service.call_service(url, {"action": "sync_pull", "token": token})
     return ServerState(
         logs=list(result.get("logs", [])),

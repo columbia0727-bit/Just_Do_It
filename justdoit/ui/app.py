@@ -422,6 +422,8 @@ def run() -> None:
             ctypes.windll.shcore.SetProcessDpiAwareness(1)
         except (AttributeError, OSError):
             ctypes.windll.user32.SetProcessDPIAware()
+    # 以前のバージョンが config.json に保存した週次レポートのトークンを、資格情報マネージャーに移す
+    config.migrate_report_token()
     root = tk.Tk()
     JustDoItApp(root)
     root.mainloop()
