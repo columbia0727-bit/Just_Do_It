@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 import sys
 import tempfile
@@ -158,9 +158,20 @@ class EditRecordsTest(unittest.TestCase):
         self.assertIn("時刻", records.validate_when("2026/10/13", "25:00", now))
         self.assertIn("これから先", records.validate_when("2026/10/14", "12:01", now))
 
-    def test_recent_days(self):
-        days = records.recent_days(datetime(2026, 10, 14).date(), days=3)
-        self.assertEqual([label for _, label in days], ["今日 10/14（水）", "昨日 10/13（火）", "10/12（月）"])
+    def test_day_label(self):
+        today = date(2026, 10, 14)
+        labels = [records.day_label(today - timedelta(days=d), today) for d in range(3)]
+        self.assertEqual(labels, ["今日 10/14（水）", "昨日 10/13（火）", "10/12（月）"])
+
+    def test_month_weeks_start_on_monday(self):
+        weeks = records.month_weeks(2026, 10)
+        # 2026年10月1日は木曜。月曜はじまりなので、1週目は月〜水が空く
+        self.assertEqual(weeks[0], [None, None, None, date(2026, 10, 1), date(2026, 10, 2), date(2026, 10, 3),
+                                    date(2026, 10, 4)])
+        self.assertEqual(weeks[-1][:6], [date(2026, 10, 26), date(2026, 10, 27), date(2026, 10, 28),
+                                         date(2026, 10, 29), date(2026, 10, 30), date(2026, 10, 31)])
+        self.assertIsNone(weeks[-1][6])
+        self.assertEqual(sum(day is not None for week in weeks for day in week), 31)
 
     def test_validate_record(self):
         self.assertEqual(records.validate_record(" 制作 ", "25"), ("制作", 25))

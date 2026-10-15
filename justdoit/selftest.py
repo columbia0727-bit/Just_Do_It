@@ -70,6 +70,17 @@ def _run_screens(lines: list[str]) -> bool:
     errors: list[str] = []
     root.report_callback_exception = lambda *exc: errors.append("".join(traceback.format_exception(*exc)))
     app = app_module.JustDoItApp(root)
+
+    def open_calendar() -> None:
+        from justdoit.ui.datepicker import DatePicker
+
+        timer.show_manual_record(app)
+        root.update()
+        pickers = [w for w in _find_widgets(root, "Label") if isinstance(w, DatePicker)]
+        if not pickers:
+            raise RuntimeError("手動記録に日付の欄がありません")
+        pickers[0].open()
+
     screens = [
         ("メニュー", app.show_main_menu),
         ("初回の案内", app.show_welcome),
@@ -77,6 +88,7 @@ def _run_screens(lines: list[str]) -> bool:
         ("記録画面", lambda: timer.show_record_form(app, 25, after_save=app.show_main_menu)),
         ("休憩タイマー", lambda: timer.show_break_timer(app)),
         ("手動記録", lambda: timer.show_manual_record(app)),
+        ("手動記録（カレンダー）", open_calendar),
         ("振り返り（週）", lambda: dashboard.show_dashboard(app, "week")),
         ("振り返り（月）", lambda: dashboard.show_dashboard(app, "month")),
         ("振り返り（年）", lambda: dashboard.show_dashboard(app, "year")),

@@ -88,6 +88,12 @@ def px(value: float) -> int:
     return round(value * _scale)
 
 
+def text_width(texts: list[str], size: int) -> int:
+    """いちばん長い文字の幅（100% 表示のときのピクセル数。部品の幅を決めるときに使う）"""
+    font = tkfont.Font(font=ui_font(size))
+    return round(max(font.measure(text) for text in texts) / _scale)
+
+
 def system_prefers_dark(root: tk.Misc | None = None) -> bool:
     """OS がダークモードかどうか（調べられなければライト扱い）
 
@@ -462,8 +468,7 @@ class SelectButton(PillButton):
         self.index = selected
         self.on_select = on_select
         # いちばん長い選択肢が入る幅（▾ と左右の余白のぶんを足す）
-        font = tkfont.Font(font=ui_font(11))
-        width = round(max(font.measure(value) for value in values) / _scale) + 48
+        width = text_width(values, 11) + 48
         super().__init__(parent, self.label_text(), self.open_menu, kind="select", width=width)
 
     def label_text(self) -> str:

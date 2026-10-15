@@ -3,6 +3,7 @@
 CSV は1行1記録で [日時, 作業内容, 実施時間] （例: 2026-10-14 09:00:00,制作,25分）。
 """
 
+import calendar
 import csv
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -117,15 +118,18 @@ WEEKDAY_NAMES = "月火水木金土日"
 RECENT_DAYS = 31  # 手動記録で選べる日付（今日から何日前まで）
 
 
-def recent_days(today: date, days: int = RECENT_DAYS) -> list[tuple[date, str]]:
-    """手動記録の日付の選択肢。今日から新しい順に（日付, 表示）を返す（例: 「今日 10/14（水）」）"""
-    result = []
-    for offset in range(days):
-        day = today - timedelta(days=offset)
-        label = f"{day.month}/{day.day}（{WEEKDAY_NAMES[day.weekday()]}）"
-        prefix = {0: "今日 ", 1: "昨日 "}.get(offset, "")
-        result.append((day, prefix + label))
-    return result
+def day_label(day: date, today: date) -> str:
+    """日付の表示（例: 「今日 10/14（水）」「昨日 10/13（火）」「10/1（水）」）"""
+    prefix = {0: "今日 ", 1: "昨日 "}.get((today - day).days, "")
+    return f"{prefix}{day.month}/{day.day}（{WEEKDAY_NAMES[day.weekday()]}）"
+
+
+def month_weeks(year: int, month: int) -> list[list[date | None]]:
+    """カレンダーに並べる、その月の日付（月曜はじまりの週ごと。ほかの月の日は None）"""
+    return [
+        [day if day.month == month else None for day in week]
+        for week in calendar.Calendar(firstweekday=0).monthdatescalendar(year, month)
+    ]
 
 
 def validate_when(date_text: str, time_text: str, now: datetime | None = None) -> datetime | str:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 import tkinter as tk
 from tkinter import messagebox
 from typing import TYPE_CHECKING
@@ -11,7 +11,8 @@ from typing import TYPE_CHECKING
 from PIL import ImageTk
 
 from justdoit import config
-from justdoit.records import load_records, recent_days, recent_tasks, validate_record, validate_when
+from justdoit.records import RECENT_DAYS, load_records, recent_tasks, validate_record, validate_when
+from justdoit.ui.datepicker import DatePicker
 from justdoit.ui.theme import (
     C,
     make_back_button,
@@ -20,7 +21,6 @@ from justdoit.ui.theme import (
     make_entry,
     make_label,
     make_link,
-    make_select,
     px,
     ring_image,
     ui_font,
@@ -267,15 +267,13 @@ def show_manual_record(app: JustDoItApp) -> None:
     task_entry = make_task_input(app, screen, content_width=MANUAL_RECORD_SIZE[0] - 48)
 
     now = datetime.now()
-    days = recent_days(now.date())
+    today = now.date()
     fields = tk.Frame(screen, bg=screen["bg"])
     fields.pack(anchor="w", pady=(12, 0))
     for column, text in enumerate(["日付", "時刻", "時間（分）"]):
         make_label(fields, text, size=11).grid(row=0, column=column, sticky="w", padx=(0, 10), pady=(0, 4))
-    selected_day = {"index": 0}
-    make_select(fields, [label for _, label in days], 0, lambda index: selected_day.update(index=index)).grid(
-        row=1, column=0, sticky="w", padx=(0, 10)
-    )
+    day_picker = DatePicker(fields, today, first=today - timedelta(days=RECENT_DAYS), last=today)
+    day_picker.grid(row=1, column=0, sticky="w", padx=(0, 10))
     time_entry = make_entry(fields, width=6)
     time_entry.insert(0, f"{now:%H:%M}")
     time_entry.grid(row=1, column=1, sticky="w", padx=(0, 10), ipady=4)
@@ -291,8 +289,7 @@ def show_manual_record(app: JustDoItApp) -> None:
             error_label.config(text=result)
             (mins_entry if task_entry.get().strip() else task_entry).focus_set()
             return
-        day = days[selected_day["index"]][0]
-        when = validate_when(f"{day:%Y/%m/%d}", time_entry.get())
+        when = validate_when(f"{day_picker.get():%Y/%m/%d}", time_entry.get())
         if isinstance(when, str):
             error_label.config(text=when)
             time_entry.focus_set()
