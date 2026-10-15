@@ -10,6 +10,7 @@ from functools import partial
 import math
 import platform
 import subprocess
+import sys
 import tkinter as tk
 from tkinter import font as tkfont
 from tkinter import ttk
@@ -92,9 +93,9 @@ def system_prefers_dark(root: tk.Misc | None = None) -> bool:
 
     画面を切り替えるたびに呼ぶので、速く調べられる方法を使う。
     """
+    # OS ごとの分岐は sys.platform で書く（mypy が OS ごとに見分け、ほかの OS にない機能をエラーにしないように）
     try:
-        system = platform.system()
-        if system == "Windows":
+        if sys.platform == "win32":
             import winreg
 
             key = winreg.OpenKey(
@@ -102,7 +103,7 @@ def system_prefers_dark(root: tk.Misc | None = None) -> bool:
             )
             with key:
                 return winreg.QueryValueEx(key, "AppsUseLightTheme")[0] == 0
-        if system == "Darwin":
+        if sys.platform == "darwin":
             # Tk に聞けばすぐにわかる（別のプログラムを起動しないので、画面の切り替えが遅れない）
             if root is not None:
                 try:
@@ -200,7 +201,7 @@ def _style_ttk(root: tk.Tk) -> None:
 
 def _set_title_bar_dark(root: tk.Tk, dark: bool) -> None:
     """Windows 10/11 のタイトルバーも暗くする（できない環境では何もしない）"""
-    if platform.system() != "Windows":
+    if sys.platform != "win32":
         return
     try:
         import ctypes

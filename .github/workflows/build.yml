@@ -24,7 +24,11 @@ jobs:
           python-version: "3.12"
       - run: pip install -r requirements-dev.txt
       - run: python -m ruff check .
-      - run: python -m mypy
+      # Windows・macOS 用の処理もあるので、それぞれの OS として型を確かめる
+      # （OS ごとの分岐は sys.platform で書く。platform.system() だと mypy が見分けられない）
+      - run: python -m mypy --platform linux
+      - run: python -m mypy --platform win32
+      - run: python -m mypy --platform darwin
 
   # 週次レポート配信サービス（GAS）のテスト。本物の Code.js を模擬環境に読み込んで確かめる
   gas-test:

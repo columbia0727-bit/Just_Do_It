@@ -206,6 +206,7 @@ python -m mypy
 ```bash
 node gas/tests/run.js
 ```
+型のチェックは、使っている OS として行われます。ほかの OS 向けの処理も確かめるには `--platform win32`（`linux`・`darwin`）を付けます（GitHub Actions では3つとも確かめます）。
 GAS のテストは、本物の `Code.js` を模擬環境（スプレッドシート・メール・時計を手元で再現したもの）に読み込み、登録・同期・レポートの配信タイミングなどを確かめます。GitHub Actions では、これらをすべて毎回実行します。
 画面を表示するテストは、ディスプレイのない環境では自動でスキップされます（GitHub Actions では仮想ディスプレイ上で実行）。
 

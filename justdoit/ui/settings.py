@@ -7,9 +7,9 @@ from dataclasses import replace
 from functools import partial
 import os
 from pathlib import Path
-import platform
 import queue
 import subprocess
+import sys
 import threading
 import tkinter as tk
 from tkinter import messagebox, simpledialog
@@ -98,10 +98,10 @@ def open_folder(app: JustDoItApp, path: Path) -> None:
     """エクスプローラー（Mac は Finder）でフォルダを開く"""
     try:
         path.mkdir(parents=True, exist_ok=True)
-        system = platform.system()
-        if system == "Windows":
+        # sys.platform で分ける（mypy が OS ごとに見分け、Windows にしかない os.startfile をエラーにしないように）
+        if sys.platform == "win32":
             os.startfile(path)
-        elif system == "Darwin":
+        elif sys.platform == "darwin":
             subprocess.Popen(["open", str(path)])
         else:
             subprocess.Popen(["xdg-open", str(path)])

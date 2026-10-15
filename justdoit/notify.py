@@ -1,10 +1,11 @@
 """タイマー終了の知らせ方（音・OS の通知）。追加のライブラリを使わず、OS 標準の仕組みを呼び出す
 
 どれも失敗してもアプリは止めない（通知が出ないだけ）。
+OS ごとの分岐は sys.platform で書く（mypy が OS ごとに見分け、ほかの OS にない機能をエラーにしないように）。
 """
 
-import platform
 import subprocess
+import sys
 from xml.sax.saxutils import escape
 
 # Windows の通知は、登録済みのアプリの名前（AppUserModelID）で出す必要がある。
@@ -16,13 +17,12 @@ MAC_SOUND = "/System/Library/Sounds/Glass.aiff"
 def play_sound() -> bool:
     """OS の通知音を鳴らす。鳴らせなかったら False（呼び出し側で Tk の bell() を使う）"""
     try:
-        system = platform.system()
-        if system == "Windows":
+        if sys.platform == "win32":
             import winsound
 
             winsound.MessageBeep(winsound.MB_ICONASTERISK)
             return True
-        if system == "Darwin":
+        if sys.platform == "darwin":
             subprocess.Popen(["afplay", MAC_SOUND])
             return True
     except (OSError, RuntimeError):
@@ -33,10 +33,9 @@ def play_sound() -> bool:
 def show_notification(title: str, message: str) -> None:
     """OS の通知（Windows のトースト通知・macOS の通知センター）を出す"""
     try:
-        system = platform.system()
-        if system == "Windows":
+        if sys.platform == "win32":
             _show_windows_toast(title, message)
-        elif system == "Darwin":
+        elif sys.platform == "darwin":
             script = f"display notification {_applescript_string(message)} with title {_applescript_string(title)}"
             subprocess.Popen(["osascript", "-e", script])
         else:
@@ -46,6 +45,8 @@ def show_notification(title: str, message: str) -> None:
 
 
 def _show_windows_toast(title: str, message: str) -> None:
+    if sys.platform != "win32":
+        return
     toast_xml = (
         '<toast><visual><binding template="ToastGeneric">'
         f"<text>{escape(title)}</text><text>{escape(message)}</text>"

@@ -4,6 +4,7 @@ from collections.abc import Callable
 from datetime import datetime
 import platform
 import queue
+import sys
 import threading
 import tkinter as tk
 from tkinter import messagebox
@@ -410,7 +411,8 @@ def today_summary() -> str:
 
 def run() -> None:
     """アプリを起動する"""
-    if platform.system() == "Windows":
+    # sys.platform で分ける（mypy が OS ごとに見分け、Windows にしかない ctypes.windll をエラーにしないように）
+    if sys.platform == "win32":
         # python.exe とは別のアプリとして扱わせ、タスクバーに Python ではなくアプリのアイコンを出す
         import ctypes
 
