@@ -1,6 +1,7 @@
 # コードのチェックの設定（GitHub Actions でも同じ設定で実行する）
 #   ruff：書き方・間違いやすい書き方のチェック（python -m ruff check .）
 #   mypy：型のチェック（python -m mypy）
+#   coverage：テストがどれだけのコードを通っているか（python -m coverage run -m unittest discover -s tests）
 
 [tool.ruff]
 line-length = 120
@@ -17,7 +18,17 @@ force-sort-within-sections = true
 
 [tool.mypy]
 python_version = "3.12"
-files = ["justdoit", "main.py"]
+files = ["justdoit", "main.py", "tools"]
 # pandas・matplotlib などには型情報が無いものがあるので、見つからなくてもエラーにしない
 ignore_missing_imports = true
 warn_unused_ignores = true
+
+[tool.coverage.run]
+source = ["justdoit", "tools"]
+branch = true
+
+[tool.coverage.report]
+# 画面のコード（justdoit/ui）は、ビルドしたアプリの --self-test で全画面を開いて確かめている。
+# 単体テストのカバレッジは、画面以外の処理（集計・同期・通信など）で高く保つ
+skip_empty = true
+sort = "cover"
