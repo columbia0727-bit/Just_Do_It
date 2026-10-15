@@ -168,6 +168,8 @@ def migrate_report_token() -> None:
 FOCUS_MINUTE_CHOICES = (15, 20, 25, 30, 45, 50, 60, 90)
 BREAK_MINUTE_CHOICES = (5, 10, 15, 20, 30)
 APPEARANCES = ("system", "light", "dark")  # デバイスに合わせる / ライト / ダーク
+# 週の目標（分）。0 は目標なし。週次レポートに登録していれば、配信サービスにも保存してほかの PC とそろえる
+WEEKLY_GOAL_CHOICES = (0, 60, 120, 180, 300, 420, 600, 900, 1200)
 
 
 @dataclass
@@ -178,6 +180,7 @@ class Preferences:
     notify_front: bool = True  # ウィンドウを前面に出す
     notify_os: bool = True  # OS の通知を出す
     appearance: str = "system"  # 画面の色
+    weekly_goal_minutes: int = 0  # 週の目標（0 は目標なし）
 
 
 def load_preferences() -> Preferences:
@@ -195,6 +198,8 @@ def load_preferences() -> Preferences:
         prefs.break_minutes = Preferences.break_minutes
     if prefs.appearance not in APPEARANCES:
         prefs.appearance = Preferences.appearance
+    if prefs.weekly_goal_minutes not in WEEKLY_GOAL_CHOICES:
+        prefs.weekly_goal_minutes = Preferences.weekly_goal_minutes
     return prefs
 
 

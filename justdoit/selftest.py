@@ -125,7 +125,8 @@ def _run_screens(lines: list[str]) -> bool:
         ("設定（週次レポート）", lambda: settings.show_settings(app, "report")),
     ]
     for appearance in ("light", "dark"):
-        config.save_preferences(config.Preferences(appearance=appearance))
+        # 週の目標も決めておき、メニューの「今週 … / 目標 …」も表示する
+        config.save_preferences(config.Preferences(appearance=appearance, weekly_goal_minutes=180))
         for name, show in screens:
             before = len(errors)
             try:

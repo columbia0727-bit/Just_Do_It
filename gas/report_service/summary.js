@@ -20,10 +20,11 @@ function getReportRange_(sendAt) {
   };
 }
 
-// レポートに載せる数字をまとめて計算する（この1週間・前の週・直近30日・直近12か月）
-function buildReport_(logs, dueAt) {
+// レポートに載せる数字をまとめて計算する（この1週間・前の週・直近30日・直近12か月・週の目標）
+function buildReport_(logs, dueAt, goalMinutes) {
   const week = getReportRange_(dueAt);
   return {
+    goalMinutes: goalMinutes || 0,
     week: week,
     current: summarize_(logs, week.start, week.end),
     previous: summarize_(logs, week.prevStart, week.start),

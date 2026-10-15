@@ -245,9 +245,12 @@
       [week(119, 2), week(100, 2), "warm"],
       [week(120, 2), week(100, 2), "solid"],
       [week(300, 5), week(200, 5), "intense"],
+      [week(120, 7), week(10, 1), "goalReached", 120], // 目標の達成が、7日すべて・2倍以上より優先
+      [week(119, 7), week(10, 1), "everyDay", 120], // 目標まであと1分
+      [week(0, 0), week(0, 0), "zeroAgain", 0],
     ];
-    cases.forEach(([current, previous, kind]) =>
-      assertEqual(gas.api.cheerKind_(current, previous), kind, JSON.stringify([current, previous]))
+    cases.forEach(([current, previous, kind, goal]) =>
+      assertEqual(gas.api.cheerKind_(current, previous, goal || 0), kind, JSON.stringify([current, previous, goal]))
     );
 
     // 記録のない人に届くレポートは、2週連続0分のひとことで始まる。同じ週なら何度送っても同じ文
@@ -262,6 +265,48 @@
     const htmlAt = first.htmlBody.indexOf(message);
     assertTrue(htmlAt >= 0 && htmlAt < first.htmlBody.indexOf("この1週間の作業時間"), "ひとことが HTML の最初にない");
     assertTrue(second.body.includes(message), "同じ週なのに、ひとことが変わった");
+  });
+
+  test("週の目標は登録・変更・同期でき、目標なしの PC をあとから登録しても消えない", (code) => {
+    const gas = global.GasTest.createEnv(code);
+    const pc1 = gas.signUp("me@example.com", { goal_minutes: 180 });
+    assertEqual(gas.post({ action: "sync_pull", token: pc1 }).goal_minutes, 180);
+    const pc2 = gas.signUp("me@example.com", { goal_minutes: 0 }); // 目標を決めていない PC
+    assertEqual(gas.post({ action: "sync_pull", token: pc2 }).goal_minutes, 180, "ほかの PC で決めた目標が消えた");
+
+    assertEqual(gas.post({ action: "update_goal", token: pc2, goal_minutes: 300 }), { status: "success", goal_minutes: 300 });
+    assertEqual(gas.post({ action: "sync_pull", token: pc1 }).goal_minutes, 300);
+    assertEqual(gas.post({ action: "update_goal", token: pc1, goal_minutes: 0 }).goal_minutes, 0, "目標なしに戻せない");
+    for (const bad of [-1, 1.5, "3時間", 100 * 60 + 1]) {
+      assertEqual(gas.post({ action: "update_goal", token: pc1, goal_minutes: bad }).code, "invalid", String(bad));
+    }
+    assertEqual(gas.post({ action: "update_goal", token: "nope", goal_minutes: 60 }).code, "unauthorized");
+    // 目標の列が無い古いシートの利用者も、目標なしとして読める
+    const other = gas.signUp("other@example.com");
+    assertEqual(gas.post({ action: "sync_pull", token: other }).goal_minutes, 0);
+  });
+
+  test("週の目標を決めていると、レポートに達成・あと何分かが入り、達成した週は専用のひとことになる", (code) => {
+    const gas = global.GasTest.createEnv(code, at(2026, 10, 14, 10, 30));
+    const token = gas.signUp("me@example.com", { weekday: 6, hour: 21, goal_minutes: 120 });
+    gas.post({ action: "log", token, datetime: "2026-10-17 09:00:00", task: "制作", minutes: 90, id: id("a") });
+    runHourly(gas, at(2026, 10, 14, 11), at(2026, 10, 18, 22)); // 毎週の定期レポート（日曜 21時）
+    let mail = gas.mails.find((m) => m.subject.includes("レポート"));
+    assertTrue(mail.body.includes("- 週の目標 : 目標 2時間 ・ あと 30分"), "テキスト版\n" + mail.body);
+    assertTrue(mail.htmlBody.includes("目標 2時間 ・ あと 30分"), "HTML 版");
+
+    gas.post({ action: "log", token, datetime: "2026-10-18 09:00:00", task: "制作", minutes: 40, id: id("b") });
+    gas.setNow(at(2026, 10, 18, 21, 45));
+    gas.post({ action: "send_test_report", token });
+    mail = gas.mails[gas.mails.length - 1];
+    assertTrue(mail.body.includes("- 週の目標 : 目標 2時間 ・ 達成！"), "テキスト版\n" + mail.body);
+    assertTrue(gas.api.CHEER_MESSAGES.goalReached.some((text) => mail.body.includes(text)), "達成のひとことではない");
+
+    // 目標なしなら、目標の行は出さない
+    gas.post({ action: "update_goal", token, goal_minutes: 0 });
+    gas.setNow(at(2026, 10, 18, 22, 0));
+    gas.post({ action: "send_test_report", token });
+    assertTrue(!gas.mails[gas.mails.length - 1].body.includes("週の目標"), "目標なしなのに目標の行がある");
   });
 
   test("届くタイミングを変えた直後に、同じ週のレポートが2通届かない", (code) => {

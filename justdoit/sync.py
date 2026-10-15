@@ -11,7 +11,7 @@
 記録の同一性は、記録の内容（日時・作業内容・時間）から作る ID（report_service.log_id）で判断する。
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -29,6 +29,7 @@ class ServerState:
     schedule: tuple[int, int]  # 届くタイミング（曜日, 時）
     retention_days: int  # サーバーが記録を預かる日数
     email: str = ""  # 登録中のメールアドレス（返さない古いサーバーなら空）
+    goal_minutes: int | None = None  # 週の目標（返さない古いサーバーなら None）
 
 
 @dataclass
@@ -40,6 +41,8 @@ class SyncResult:
     schedule_updated: tuple[int, int] | None = None
     # ほかの PC でメールアドレスを変えた場合の、新しいアドレス
     email_updated: str | None = None
+    # ほかの PC で週の目標を変えた場合の、新しい目標（分。0 は目標なし）
+    goal_updated: int | None = None
 
     @property
     def changed(self) -> bool:
@@ -67,6 +70,7 @@ def fetch_server_state() -> ServerState:
         schedule=(int(result.get("weekday", 0)), int(result.get("hour", 9))),
         retention_days=int(result.get("retention_days", 400)),
         email=str(result.get("email", "")),
+        goal_minutes=int(result["goal_minutes"]) if "goal_minutes" in result else None,
     )
 
 
@@ -126,6 +130,13 @@ def apply(state: ServerState) -> SyncResult:
         result.email_updated = state.email
     if result.schedule_updated or result.email_updated:
         config.save_config(settings)
+
+    # 週の目標も同じく合わせる（アプリで選べない値なら、そのままにする）
+    prefs = config.load_preferences()
+    goal = state.goal_minutes
+    if goal is not None and goal != prefs.weekly_goal_minutes and goal in config.WEEKLY_GOAL_CHOICES:
+        config.save_preferences(replace(prefs, weekly_goal_minutes=goal))
+        result.goal_updated = goal
     return result
 
 

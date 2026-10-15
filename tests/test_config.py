@@ -40,6 +40,14 @@ class PreferencesTest(unittest.TestCase):
         config.save_preferences(config.Preferences(appearance="dark"))
         self.assertEqual(config.load_preferences().appearance, "dark")
 
+    def test_weekly_goal(self):
+        self.assertEqual(config.load_preferences().weekly_goal_minutes, 0, "初めは目標なし")
+        config.save_preferences(config.Preferences(weekly_goal_minutes=180))
+        self.assertEqual(config.load_preferences().weekly_goal_minutes, 180)
+        # 選択肢にない値（手で書き換えた・新しいバージョンの値など）は、目標なしにする
+        config.save_config({"preferences": {"weekly_goal_minutes": 7}})
+        self.assertEqual(config.load_preferences().weekly_goal_minutes, 0)
+
 
 class FakeVault:
     """資格情報マネージャーの代わり（fail=True なら、どの操作も失敗する）"""

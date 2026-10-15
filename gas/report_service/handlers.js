@@ -55,15 +55,42 @@ function generateCode_() {
 
 // 確認コードを照合し、アプリ用のトークンを発行する
 // 届くタイミング（weekday / hour）が送られてきた場合は、その設定で登録する
+// 週の目標（goal_minutes）は、目標を決めている（1分以上）ときだけ保存する
+// （目標なしの PC をあとから登録しても、ほかの PC で決めた目標を消さないように）
 function handleVerify_(data) {
   const email = normalizeEmail_(data.email);
   const schedule = parseSchedule_(data, true);
+  const goal = data.goal_minutes === undefined ? 0 : parseGoal_(data.goal_minutes);
   consumeCode_(email, data.code);
 
   const user = activateUser_(email, schedule);
   const token = Utilities.getUuid().replace(/-/g, "") + Utilities.getUuid().replace(/-/g, "");
   appendTextRow_(getSheet_("tokens"), [sha256Hex_(token), user.userId, nowString_()]);
-  return { status: "success", token: token, weekday: user.schedule.weekday, hour: user.schedule.hour };
+  const users = getSheet_("users");
+  const row = findRow_(users, 1, user.userId);
+  if (goal > 0) {
+    writeGoal_(users, row, goal);
+  }
+  return {
+    status: "success",
+    token: token,
+    weekday: user.schedule.weekday,
+    hour: user.schedule.hour,
+    goal_minutes: readGoal_(users.getRange(row, USER_GOAL_COLUMN).getValue()),
+  };
+}
+
+// 週の目標を変更する（0 は目標なし）
+function handleUpdateGoal_(data) {
+  const userId = authenticate_(data.token);
+  const goal = parseGoal_(data.goal_minutes);
+  const users = getSheet_("users");
+  const row = findRow_(users, 1, userId);
+  if (!row) {
+    fail_("認証に失敗しました。設定画面から再登録してください", "unauthorized");
+  }
+  writeGoal_(users, row, goal);
+  return { status: "success", goal_minutes: goal };
 }
 
 // メールアドレスに送った確認コードを照合する（合っていればコードを使い切る。違えば fail_ で中断する）
@@ -206,6 +233,7 @@ function handleSyncPull_(data) {
     deleted: deleted,
     weekday: schedule.weekday,
     hour: schedule.hour,
+    goal_minutes: readGoal_(users.getRange(row, USER_GOAL_COLUMN).getValue()),
     retention_days: LOG_RETENTION_DAYS,
   };
 }
@@ -266,7 +294,12 @@ function handleSendTestReport_(data) {
     fail_("認証に失敗しました。設定画面から再登録してください", "unauthorized");
   }
   const now = new Date();
-  const user = { userId: userId, email: String(users.getRange(row, 2).getValue()), dueAt: now };
+  const user = {
+    userId: userId,
+    email: String(users.getRange(row, 2).getValue()),
+    dueAt: now,
+    goalMinutes: readGoal_(users.getRange(row, USER_GOAL_COLUMN).getValue()),
+  };
   const from = getReportRange_(now).yearStart;
   const logs = groupLogsByUser_(getSheetRows_(getSheet_("logs")), from, now)[userId] || [];
 

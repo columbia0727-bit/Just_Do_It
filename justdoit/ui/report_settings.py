@@ -13,6 +13,7 @@ from tkinter import messagebox, simpledialog
 from typing import TYPE_CHECKING
 
 from justdoit import config, report_service
+from justdoit.records import format_hours_mins
 from justdoit.report_service import ReportServiceError
 from justdoit.ui.theme import C, make_button, make_entry, make_label, make_link, make_select
 
@@ -163,6 +164,9 @@ def sync_status_text(app: JustDoItApp) -> str:
         changes.append(f"届くタイミングを{report_service.format_schedule(*result.schedule_updated)}に更新")
     if result.email_updated:
         changes.append("メールアドレスを更新")
+    if result.goal_updated is not None:
+        goal = f"{format_hours_mins(result.goal_updated)}に" if result.goal_updated else "なしに"
+        changes.append(f"週の目標を{goal}更新")
     detail = "・".join(changes) if changes else "変更なし"
     return f"最後に同期: {synced_at:%m/%d %H:%M}（{detail}）"
 
@@ -266,7 +270,12 @@ def ask_verify_code(app: JustDoItApp, email: str, schedule: tuple[int, int]) -> 
         finish_register(app, email, result["token"], saved)
 
     weekday, hour = schedule
-    send_with_code(app, email, {"action": "verify", "email": email, "weekday": weekday, "hour": hour}, on_verified)
+    payload = {"action": "verify", "email": email, "weekday": weekday, "hour": hour}
+    # 週の目標は、決めているときだけ送る（ほかの PC で決めた目標を、目標なしで上書きしないように）
+    goal = config.load_preferences().weekly_goal_minutes
+    if goal:
+        payload["goal_minutes"] = goal
+    send_with_code(app, email, payload, on_verified)
 
 
 def send_with_code(app: JustDoItApp, email: str, payload: dict, on_success: Callable[[dict], None]) -> None:
@@ -363,6 +372,36 @@ def change_email(app: JustDoItApp) -> None:
 
     # 新しいアドレスで受け取れることを、確認コードで確かめてから変える
     call_service_async(app, {"action": "register", "email": new_email}, on_sent)
+
+
+# ==========================================
+# 週の目標の変更（設定画面の「全般」タブから呼ぶ）
+# ==========================================
+def update_goal(
+    app: JustDoItApp, minutes: int, on_saved: Callable[[], None], on_failed: Callable[[], None]
+) -> None:
+    """週の目標を変える。週次レポートに登録していれば、先に配信サービスへ保存する
+
+    レポートに目標を載せるためと、同期でほかの PC の目標もそろえるため。
+    保存できなかったときは on_failed を呼ぶ（選択欄を元に戻す）。
+    """
+    if not config.get_report_token():
+        on_saved()
+        return
+    if app.busy:  # 前の通信の途中
+        on_failed()
+        return
+
+    def on_done(result, error):
+        if error:
+            on_failed()
+            messagebox.showerror("変更エラー", f"週の目標を変えられませんでした。\n{error}", parent=app.root)
+            return
+        on_saved()
+
+    call_service_async(
+        app, {"action": "update_goal", "token": config.get_report_token(), "goal_minutes": minutes}, on_done
+    )
 
 
 # ==========================================

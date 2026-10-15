@@ -19,7 +19,7 @@ function buildReportHtml_(report, unsubscribeUrl) {
     // ひとことは最初に目に入るよう、見出しのすぐ下に置く
     '<p style="margin:16px 0 0;padding-left:12px;border-left:3px solid ' + c.accent + ";font-size:15px;line-height:1.8;" +
       "color:" + c.text + ';">' + escapeHtml_(cheerMessage_(report)) + "</p>",
-    htmlHero_(current, previous),
+    htmlHero_(current, previous, report.goalMinutes),
     htmlStats_(week, current),
     current.totalMinutes > 0 ? htmlDailyChart_(week, current) : "",
     current.totalMinutes > 0 ? htmlTaskBars_(current) : "",
@@ -46,8 +46,8 @@ function buildReportHtml_(report, unsubscribeUrl) {
   );
 }
 
-// 合計時間を大きく、前の週との差を添える
-function htmlHero_(current, previous) {
+// 合計時間を大きく、前の週との差を添える（週の目標を決めていれば、目標までの進み具合も出す）
+function htmlHero_(current, previous, goalMinutes) {
   const c = MAIL_COLORS;
   const diff = current.totalMinutes - previous.totalMinutes;
   let diffHtml = "";
@@ -59,14 +59,31 @@ function htmlHero_(current, previous) {
       "background:" + (up ? c.accentSoft : c.paper) + ";color:" + (up ? c.accent : c.muted) + ';">' +
       "前の週より " + formatDiff_(diff) + (up ? " ↑" : "") + "</span>";
   }
+  let goalHtml = "";
+  if (goalMinutes > 0) {
+    const pct = Math.min(100, Math.round((current.totalMinutes / goalMinutes) * 100));
+    goalHtml =
+      '<div style="margin:14px auto 0;max-width:260px;height:8px;border-radius:4px;background:' + c.border + ';">' +
+      '<div style="width:' + Math.max(pct, 2) + "%;height:8px;border-radius:4px;background:" + c.accent + ';"></div>' +
+      "</div>" +
+      '<div style="margin-top:6px;font-size:13px;color:' + c.muted + ';">' +
+      goalText_(goalMinutes, current.totalMinutes) + "</div>";
+  }
   return (
     '<div style="margin-top:16px;padding:20px;border-radius:10px;background:' + c.paper + ';text-align:center;">' +
     '<div style="font-size:13px;color:' + c.muted + ';">この1週間の作業時間</div>' +
     '<div style="margin-top:4px;font-size:34px;font-weight:bold;color:' + c.accent + ';">' +
     formatHoursMins_(current.totalMinutes) + "</div>" +
     diffHtml +
+    goalHtml +
     "</div>"
   );
+}
+
+// 「目標 3時間 ・ 達成！」「目標 3時間 ・ あと 40分」
+function goalText_(goalMinutes, totalMinutes) {
+  const rest = goalMinutes - totalMinutes;
+  return "目標 " + formatHoursMins_(goalMinutes) + " ・ " + (rest <= 0 ? "達成！" : "あと " + formatHoursMins_(rest));
 }
 
 // 記録した日（7つの丸）・記録回数・一番がんばった日

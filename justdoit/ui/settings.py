@@ -17,8 +17,9 @@ from typing import TYPE_CHECKING
 import webbrowser
 
 from justdoit import __version__, config
+from justdoit.records import format_hours_mins
 from justdoit.ui import theme
-from justdoit.ui.report_settings import TEXT_WIDTH, build_report_section
+from justdoit.ui.report_settings import TEXT_WIDTH, build_report_section, update_goal
 from justdoit.ui.theme import (
     C,
     make_checkbox,
@@ -31,7 +32,7 @@ from justdoit.ui.theme import (
 if TYPE_CHECKING:
     from justdoit.ui.app import JustDoItApp
 
-SETTINGS_SIZE = (460, 560)
+SETTINGS_SIZE = (460, 620)
 TABS = [("timer", "全般"), ("report", "週次レポート")]
 
 
@@ -138,13 +139,32 @@ def build_timer_section(app: JustDoItApp, screen: tk.Frame) -> None:
         change_appearance,
     ).grid(row=1, column=1, sticky="w", padx=(12, 0), pady=3)
 
-    make_label(rows, "タイマー", bold=True).grid(row=2, column=0, columnspan=2, sticky="w", pady=(16, 0))
+    # 週の目標（週次レポートに登録していれば、配信サービスにも保存してから変える）
+    make_label(rows, "目標", bold=True).grid(row=2, column=0, columnspan=2, sticky="w", pady=(16, 0))
+    make_label(rows, "週の目標", size=11).grid(row=3, column=0, sticky="w", pady=3)
+    goals = config.WEEKLY_GOAL_CHOICES
+
+    def choose_goal(index: int) -> None:
+        def failed() -> None:
+            goal_select.current(goals.index(prefs.weekly_goal_minutes))  # 選ぶ前に戻す
+
+        update_goal(app, goals[index], on_saved=lambda: change(weekly_goal_minutes=goals[index]), on_failed=failed)
+
+    goal_select = make_select(
+        rows,
+        [format_hours_mins(mins) if mins else "なし" for mins in goals],
+        goals.index(prefs.weekly_goal_minutes),
+        choose_goal,
+    )
+    goal_select.grid(row=3, column=1, sticky="w", padx=(12, 0), pady=3)
+
+    make_label(rows, "タイマー", bold=True).grid(row=4, column=0, columnspan=2, sticky="w", pady=(16, 0))
     for row, (label, choices, current, key) in enumerate(
         [
             ("集中する長さ", config.FOCUS_MINUTE_CHOICES, prefs.focus_minutes, "focus_minutes"),
             ("休憩の長さ", config.BREAK_MINUTE_CHOICES, prefs.break_minutes, "break_minutes"),
         ],
-        start=3,
+        start=5,
     ):
         make_label(rows, label, size=11).grid(row=row, column=0, sticky="w", pady=3)
         make_select(
