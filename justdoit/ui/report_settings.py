@@ -13,6 +13,7 @@ from tkinter import messagebox, simpledialog
 from typing import TYPE_CHECKING
 
 from justdoit import config, report_service
+from justdoit.records import format_hours_mins
 from justdoit.report_service import ReportServiceError
 from justdoit.ui.theme import C, make_button, make_entry, make_label, make_link, make_select
 
@@ -55,7 +56,7 @@ def build_report_section(app: JustDoItApp, frame: tk.Frame) -> None:
         return
 
     settings = config.load_config()
-    if settings.get("report_token"):
+    if config.get_report_token():
         registered = tk.Frame(frame, bg=frame["bg"])
         registered.pack(fill="x")
         make_label(registered, f"登録中: {settings.get('report_email', '')}", size=11).pack(side="left")
@@ -163,6 +164,9 @@ def sync_status_text(app: JustDoItApp) -> str:
         changes.append(f"届くタイミングを{report_service.format_schedule(*result.schedule_updated)}に更新")
     if result.email_updated:
         changes.append("メールアドレスを更新")
+    if result.goal_updated is not None:
+        goal = f"{format_hours_mins(result.goal_updated)}に" if result.goal_updated else "なしに"
+        changes.append(f"週の目標を{goal}更新")
     detail = "・".join(changes) if changes else "変更なし"
     return f"最後に同期: {synced_at:%m/%d %H:%M}（{detail}）"
 
@@ -266,7 +270,12 @@ def ask_verify_code(app: JustDoItApp, email: str, schedule: tuple[int, int]) -> 
         finish_register(app, email, result["token"], saved)
 
     weekday, hour = schedule
-    send_with_code(app, email, {"action": "verify", "email": email, "weekday": weekday, "hour": hour}, on_verified)
+    payload = {"action": "verify", "email": email, "weekday": weekday, "hour": hour}
+    # 週の目標は、決めているときだけ送る（ほかの PC で決めた目標を、目標なしで上書きしないように）
+    goal = config.load_preferences().weekly_goal_minutes
+    if goal:
+        payload["goal_minutes"] = goal
+    send_with_code(app, email, payload, on_verified)
 
 
 def send_with_code(app: JustDoItApp, email: str, payload: dict, on_success: Callable[[dict], None]) -> None:
@@ -293,10 +302,10 @@ def send_with_code(app: JustDoItApp, email: str, payload: dict, on_success: Call
 def finish_register(app: JustDoItApp, email: str, token: str, schedule: tuple[int, int]) -> None:
     settings = config.load_config()
     settings["report_email"] = email
-    settings["report_token"] = token
     report_service.save_schedule(settings, *schedule)
     try:
         config.save_config(settings)
+        config.set_report_token(token)  # Windows では資格情報マネージャーに保存する
     except OSError as e:
         messagebox.showerror("保存エラー", f"設定を保存できませんでした:\n{e}", parent=app.root)
         return
@@ -337,7 +346,7 @@ def change_email(app: JustDoItApp) -> None:
     if new_email.lower() == current.lower():
         messagebox.showinfo("メールアドレスを変更", "今と同じメールアドレスです。", parent=app.root)
         return
-    token = config.load_config().get("report_token")
+    token = config.get_report_token()
 
     def on_changed(result: dict) -> None:
         settings_data = config.load_config()
@@ -366,6 +375,36 @@ def change_email(app: JustDoItApp) -> None:
 
 
 # ==========================================
+# 週の目標の変更（設定画面の「全般」タブから呼ぶ）
+# ==========================================
+def update_goal(
+    app: JustDoItApp, minutes: int, on_saved: Callable[[], None], on_failed: Callable[[], None]
+) -> None:
+    """週の目標を変える。週次レポートに登録していれば、先に配信サービスへ保存する
+
+    レポートに目標を載せるためと、同期でほかの PC の目標もそろえるため。
+    保存できなかったときは on_failed を呼ぶ（選択欄を元に戻す）。
+    """
+    if not config.get_report_token():
+        on_saved()
+        return
+    if app.busy:  # 前の通信の途中
+        on_failed()
+        return
+
+    def on_done(result, error):
+        if error:
+            on_failed()
+            messagebox.showerror("変更エラー", f"週の目標を変えられませんでした。\n{error}", parent=app.root)
+            return
+        on_saved()
+
+    call_service_async(
+        app, {"action": "update_goal", "token": config.get_report_token(), "goal_minutes": minutes}, on_done
+    )
+
+
+# ==========================================
 # 届くタイミングの変更
 # ==========================================
 def update_schedule(app: JustDoItApp, picker: SchedulePicker, status: tk.Label) -> None:
@@ -391,7 +430,7 @@ def update_schedule(app: JustDoItApp, picker: SchedulePicker, status: tk.Label) 
             print(f"⚠️ 届くタイミングを保存できませんでした: {e}")
         status.config(text=f"{report_service.format_schedule(weekday, hour)}に届くよう変更しました")
 
-    token = config.load_config().get("report_token")
+    token = config.get_report_token()
     call_service_async(
         app, {"action": "update_schedule", "token": token, "weekday": weekday, "hour": hour}, on_done
     )
@@ -417,7 +456,7 @@ def send_test_report(app: JustDoItApp, status: tk.Label) -> None:
         status.config(text=f"{email} にテストメールを送りました（迷惑メールフォルダも確認してください）")
 
     call_service_async(
-        app, {"action": "send_test_report", "token": config.load_config().get("report_token")}, on_done
+        app, {"action": "send_test_report", "token": config.get_report_token()}, on_done
     )
 
 
@@ -435,7 +474,7 @@ def remove_this_pc(app: JustDoItApp) -> None:
         parent=app.root,
     ):
         return
-    token = config.load_config().get("report_token")
+    token = config.get_report_token()
 
     def work():
         # この PC でまだ送れていない記録を先に送る（ほかの PC から見えなくならないように）
@@ -501,5 +540,5 @@ def unregister(app: JustDoItApp) -> None:
         reopen_settings(app)
 
     call_service_async(
-        app, {"action": "unregister", "token": config.load_config().get("report_token")}, on_done
+        app, {"action": "unregister", "token": config.get_report_token()}, on_done
     )

@@ -20,6 +20,7 @@ def run(log_path: Path = Path(LOG_FILE)) -> int:
     lines: list[str] = []
     try:
         failed = _check_certificates(lines)
+        failed = _check_token_vault(lines) or failed
         failed = _run_screens(lines) or failed
     except Exception:
         lines.append("FAILED:\n" + traceback.format_exc())
@@ -42,6 +43,33 @@ def _check_certificates(lines: list[str]) -> bool:
         lines.append("ルート証明書を読み込めませんでした（HTTPS の通信ができません）")
         return True
     return False
+
+
+def _check_token_vault(lines: list[str]) -> bool:
+    """Windows で、週次レポートのトークンを資格情報マネージャーに保存できるか
+
+    keyring が配布版に同梱されていないと、気づかないまま config.json に保存されてしまうため、
+    試しに保存・読み出し・削除してみる（実際のアプリのトークンとは別の名前を使う）。
+    """
+    import sys
+
+    from justdoit import config
+
+    if sys.platform != "win32":
+        lines.append("トークンの保存先: config.json（本人だけが読める権限）")
+        return False
+    vault = config._vault()
+    if vault is None:
+        lines.append("トークンの保存先: 資格情報マネージャーを使えません（keyring が同梱されていない）")
+        return True
+    name = "--self-test--"
+    try:
+        vault.set_password(config.VAULT_SERVICE, name, "test")
+        ok = vault.get_password(config.VAULT_SERVICE, name) == "test"
+    finally:
+        vault.delete_password(config.VAULT_SERVICE, name)
+    lines.append("トークンの保存先: 資格情報マネージャー" + ("" if ok else "（読み出せません）"))
+    return not ok
 
 
 def _run_screens(lines: list[str]) -> bool:
@@ -97,7 +125,8 @@ def _run_screens(lines: list[str]) -> bool:
         ("設定（週次レポート）", lambda: settings.show_settings(app, "report")),
     ]
     for appearance in ("light", "dark"):
-        config.save_preferences(config.Preferences(appearance=appearance))
+        # 週の目標も決めておき、メニューの「今週 … / 目標 …」も表示する
+        config.save_preferences(config.Preferences(appearance=appearance, weekly_goal_minutes=180))
         for name, show in screens:
             before = len(errors)
             try:

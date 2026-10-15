@@ -231,6 +231,22 @@ class DailySummaryTest(unittest.TestCase):
         self.assertEqual(records.streak_days(loaded, today=datetime(2026, 10, 14, 8)), 3)
         self.assertEqual(records.streak_days(loaded, today=datetime(2026, 10, 15, 8)), 0)
 
+    def test_week_minutes_counts_from_monday(self):
+        loaded = self.load(
+            [
+                ("2026-10-11 23:59:00", "制作", 30),  # 日曜（先週）
+                ("2026-10-12 00:00:00", "制作", 25),  # 月曜（今週の最初）
+                ("2026-10-14 09:00:00", "学習", 20),  # 水曜（今日）
+                ("2026-10-15 09:00:00", "学習", 99),  # 木曜（今日より後。ふつうは無いが、数えない）
+            ]
+        )
+        self.assertEqual(records.week_minutes(loaded, today=datetime(2026, 10, 14, 21)), 45)
+        self.assertEqual(records.week_minutes(loaded, today=datetime(2026, 10, 11, 23, 59)), 30)
+
+    def test_goal_text(self):
+        self.assertEqual(records.goal_text(180, 80), "今週 1時間 20分 / 目標 3時間")
+        self.assertEqual(records.goal_text(180, 200), "今週 3時間 20分 / 目標 3時間 ・ 達成！")
+
 
 class FormatHoursMinsTest(unittest.TestCase):
     def test_omits_zero_hours_and_zero_minutes(self):

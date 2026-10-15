@@ -17,6 +17,7 @@ function doPost(e) {
     update_log: handleUpdateLog_,
     delete_log: handleDeleteLog_,
     update_schedule: handleUpdateSchedule_,
+    update_goal: handleUpdateGoal_,
     send_test_report: handleSendTestReport_,
     sync_pull: handleSyncPull_,
     remove_device: handleRemoveDevice_,

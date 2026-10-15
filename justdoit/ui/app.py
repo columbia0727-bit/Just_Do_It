@@ -12,7 +12,15 @@ import traceback
 import webbrowser
 
 from justdoit import config, notify, report_service, sync, updates
-from justdoit.records import append_record_to_csv, format_hours_mins, load_records, streak_days, today_minutes
+from justdoit.records import (
+    append_record_to_csv,
+    format_hours_mins,
+    goal_text,
+    load_records,
+    streak_days,
+    today_minutes,
+    week_minutes,
+)
 from justdoit.ui import dashboard, settings, theme, timer
 from justdoit.ui.theme import C, make_back_button, make_button, make_label, make_link
 
@@ -138,8 +146,8 @@ class JustDoItApp:
                 report_service.clear_registration()
             if error:
                 print(f"⚠️ 同期できませんでした: {error}")
-            # ほかの PC の記録が届いたら、メニューの「今日の合計」を表示し直す
-            if result and result.changed and self.on_menu:
+            # ほかの PC の記録・週の目標が届いたら、メニューの「今日の合計」「週の目標」を表示し直す
+            if result and (result.changed or result.goal_updated is not None) and self.on_menu:
                 self.show_main_menu()
             for listener in list(self.sync_listeners):
                 listener(result, error)
@@ -310,7 +318,11 @@ class JustDoItApp:
             timer.show_focus_timer(self, focus_minutes * 60)
 
         make_label(screen, "さあ、どうする？", size=16, bold=True).pack(pady=(20, 2))
-        make_label(screen, today_summary(), size=10, color=C.muted).pack(pady=(0, 18))
+        goal = week_goal_summary()
+        make_label(screen, today_summary(), size=10, color=C.muted).pack(pady=(0, 0 if goal else 18))
+        # 週の目標を決めていれば、今週の進み具合も出す
+        if goal:
+            make_label(screen, goal, size=10, color=C.accent).pack(pady=(0, 14))
         make_button(screen, "5分だけやる", start_short, primary=True).pack(fill="x", pady=4)
         make_button(screen, f"{focus_minutes}分やる", start_long).pack(fill="x", pady=4)
         # 表示はしないが、Enter キーでも「5分だけやる」を始められる
@@ -409,6 +421,18 @@ def today_summary() -> str:
     return text
 
 
+def week_goal_summary() -> str:
+    """メニューに出す「今週 1時間 20分 / 目標 3時間」（目標なし・作業ログが読めなければ空）"""
+    goal = config.load_preferences().weekly_goal_minutes
+    if not goal:
+        return ""
+    try:
+        records = load_records(config.get_csv_path())
+    except (OSError, ValueError):
+        return ""
+    return goal_text(goal, week_minutes(records))
+
+
 def run() -> None:
     """アプリを起動する"""
     # sys.platform で分ける（mypy が OS ごとに見分け、Windows にしかない ctypes.windll をエラーにしないように）
@@ -422,6 +446,8 @@ def run() -> None:
             ctypes.windll.shcore.SetProcessDpiAwareness(1)
         except (AttributeError, OSError):
             ctypes.windll.user32.SetProcessDPIAware()
+    # 以前のバージョンが config.json に保存した週次レポートのトークンを、資格情報マネージャーに移す
+    config.migrate_report_token()
     root = tk.Tk()
     JustDoItApp(root)
     root.mainloop()

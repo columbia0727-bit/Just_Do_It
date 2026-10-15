@@ -72,7 +72,8 @@ function findDueUsers_(now) {
       return;
     }
     if (dueAt <= now) {
-      due.push({ userId: String(row[0]), email: String(row[1]), schedule, dueAt, lastReportAt });
+      const goalMinutes = readGoal_(row[USER_GOAL_COLUMN - 1]);
+      due.push({ userId: String(row[0]), email: String(row[1]), schedule, dueAt, lastReportAt, goalMinutes });
     }
   });
   return due;
@@ -81,7 +82,7 @@ function findDueUsers_(now) {
 // isTest が true なら、件名に【テスト】を付ける（設定画面の「テストメールを送る」）
 function sendReport_(user, logs, baseUrl, isTest) {
   // 集計期間は「届ける予定だった日時」から決める（送信が遅れても期間がずれないように）
-  const report = buildReport_(logs, user.dueAt);
+  const report = buildReport_(logs, user.dueAt, user.goalMinutes || 0);
   const week = report.week;
   const unsubscribeUrl = unsubscribeUrl_(baseUrl, user.userId);
   MailApp.sendEmail({
@@ -121,13 +122,18 @@ function buildReportBody_(report, unsubscribeUrl) {
       "（前の週より " + formatDiff_(current.totalMinutes - previous.totalMinutes) + "）",
     "- 記録回数 : " + current.count + "回",
     "- 記録した日 : " + current.days + " / 7日",
+  ];
+  if (report.goalMinutes > 0) {
+    lines.push("- 週の目標 : " + goalText_(report.goalMinutes, current.totalMinutes));
+  }
+  lines.push(
     "",
     "[これまでの積み上げ]",
     "- 直近30日 : " + formatHoursMins_(report.recent.totalMinutes),
     "- 直近12か月 : " + formatHoursMins_(monthsTotal_(report.months)),
     "",
-    "[作業内容別内訳]",
-  ];
+    "[作業内容別内訳]"
+  );
 
   const tasks = Object.keys(current.taskMap).sort((a, b) => current.taskMap[b] - current.taskMap[a]);
   if (tasks.length === 0) {

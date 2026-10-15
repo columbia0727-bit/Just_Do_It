@@ -44,7 +44,7 @@ def get_service_url() -> str:
 
 
 def is_registered() -> bool:
-    return bool(get_service_url() and config.load_config().get("report_token"))
+    return bool(get_service_url() and config.get_report_token())
 
 
 def get_schedule(settings: dict) -> tuple[int, int]:
@@ -171,8 +171,8 @@ def enqueue_logs(queue_path: Path, items: list[dict]) -> None:
 
 def clear_registration() -> None:
     """保存済みのトークンと送信待ちの記録を削除する"""
+    config.clear_report_token()
     settings = config.load_config()
-    settings.pop("report_token", None)
     settings.pop("report_email", None)
     config.save_config(settings)
     with _queue_lock:
@@ -189,7 +189,7 @@ def sync_queue(url: str, queue_path: Path, wait: bool = False) -> None:
         return
     try:
         while True:
-            token = config.load_config().get("report_token")
+            token = config.get_report_token()
             with _queue_lock:
                 pending = load_queue(queue_path)
             if not token or not pending:

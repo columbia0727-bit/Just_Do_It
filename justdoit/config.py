@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import platform
 import sys
+from typing import Protocol
 
 APP_NAME = "Just do it."
 APP_DIR_NAME = "JustDoIt"
@@ -67,6 +68,98 @@ def save_config(config: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(config, f, ensure_ascii=False, indent=2)
+    if sys.platform != "win32":
+        # macOS では週次レポートのトークンをここに保存するので、本人以外は読めないようにする
+        os.chmod(path, 0o600)
+
+
+# ==========================================
+# 週次レポートの登録トークン（配信サービスで本人だと確かめるための合言葉）
+#
+# Windows は、OS の「資格情報マネージャー」に保存する（config.json を見られても漏れないように）。
+# macOS は config.json に保存し、本人以外は読めない権限にする。キーチェーンに保存しないのは、
+# 署名していないアプリは更新のたびにキーチェーンへのアクセスの許可（パスワード入力）を求められるため。
+# ==========================================
+TOKEN_KEY = "report_token"
+VAULT_SERVICE = "Just do it. 週次レポート"
+
+
+class Vault(Protocol):
+    def get_password(self, service: str, username: str) -> str | None: ...
+    def set_password(self, service: str, username: str, password: str) -> None: ...
+    def delete_password(self, service: str, username: str) -> None: ...
+
+
+def _vault() -> Vault | None:
+    """トークンを保存する OS の仕組み（使えなければ None。config.json に保存する）"""
+    if sys.platform != "win32":
+        return None
+    try:
+        from keyring.backends.Windows import WinVaultKeyring
+
+        return WinVaultKeyring()
+    except Exception:  # keyring が無い・使えない環境では config.json に保存する
+        return None
+
+
+def _vault_user() -> str:
+    # 保存先フォルダごとに分ける（ソースから実行したとき・テストのときに、配布版のトークンと混ざらないように）
+    return str(get_data_dir())
+
+
+def get_report_token() -> str:
+    """保存済みのトークン（未登録なら空）"""
+    vault = _vault()
+    if vault is not None:
+        try:
+            token = vault.get_password(VAULT_SERVICE, _vault_user())
+            if token:
+                return token
+        except Exception:
+            pass
+    # 資格情報マネージャーを使えないとき・移す前のトークンは、config.json から読む
+    token = load_config().get(TOKEN_KEY)
+    return token if isinstance(token, str) else ""
+
+
+def set_report_token(token: str) -> None:
+    """トークンを保存する（資格情報マネージャーに保存できたら、config.json からは消す）"""
+    config = load_config()
+    vault = _vault()
+    if vault is not None:
+        try:
+            vault.set_password(VAULT_SERVICE, _vault_user(), token)
+            if TOKEN_KEY in config:
+                del config[TOKEN_KEY]
+                save_config(config)
+            return
+        except Exception:
+            pass  # 保存できなければ config.json に保存する
+    config[TOKEN_KEY] = token
+    save_config(config)
+
+
+def clear_report_token() -> None:
+    vault = _vault()
+    if vault is not None:
+        try:
+            vault.delete_password(VAULT_SERVICE, _vault_user())
+        except Exception:
+            pass  # 保存していなかった
+    config = load_config()
+    if TOKEN_KEY in config:
+        del config[TOKEN_KEY]
+        save_config(config)
+
+
+def migrate_report_token() -> None:
+    """以前のバージョンが config.json に保存したトークンを、資格情報マネージャーに移す（起動時に呼ぶ）"""
+    token = load_config().get(TOKEN_KEY)
+    if isinstance(token, str) and token and _vault() is not None:
+        try:
+            set_report_token(token)
+        except OSError:
+            pass  # 移せなくても、config.json から読めるので動く
 
 
 # ==========================================
@@ -75,6 +168,8 @@ def save_config(config: dict) -> None:
 FOCUS_MINUTE_CHOICES = (15, 20, 25, 30, 45, 50, 60, 90)
 BREAK_MINUTE_CHOICES = (5, 10, 15, 20, 30)
 APPEARANCES = ("system", "light", "dark")  # デバイスに合わせる / ライト / ダーク
+# 週の目標（分）。0 は目標なし。週次レポートに登録していれば、配信サービスにも保存してほかの PC とそろえる
+WEEKLY_GOAL_CHOICES = (0, 60, 120, 180, 300, 420, 600, 900, 1200)
 
 
 @dataclass
@@ -85,6 +180,7 @@ class Preferences:
     notify_front: bool = True  # ウィンドウを前面に出す
     notify_os: bool = True  # OS の通知を出す
     appearance: str = "system"  # 画面の色
+    weekly_goal_minutes: int = 0  # 週の目標（0 は目標なし）
 
 
 def load_preferences() -> Preferences:
@@ -102,6 +198,8 @@ def load_preferences() -> Preferences:
         prefs.break_minutes = Preferences.break_minutes
     if prefs.appearance not in APPEARANCES:
         prefs.appearance = Preferences.appearance
+    if prefs.weekly_goal_minutes not in WEEKLY_GOAL_CHOICES:
+        prefs.weekly_goal_minutes = Preferences.weekly_goal_minutes
     return prefs
 
 

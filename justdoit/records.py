@@ -256,6 +256,22 @@ def streak_days(records: pd.DataFrame, today: datetime | None = None) -> int:
         streak += 1
         day -= timedelta(days=1)
     return streak
+
+
+def week_minutes(records: pd.DataFrame, today: datetime | None = None) -> int:
+    """今週（月曜〜今日）の合計（週の目標と比べるのに使う）"""
+    today_date = (today or datetime.now()).date()
+    monday = today_date - timedelta(days=today_date.weekday())
+    dates = records["日時"].dt.date
+    return int(records.loc[(dates >= monday) & (dates <= today_date), "分"].sum())
+
+
+def goal_text(goal_minutes: int, done_minutes: int) -> str:
+    """「今週 1時間 20分 / 目標 3時間」（目標を超えたら「目標達成！」を添える）"""
+    text = f"今週 {format_hours_mins(done_minutes)} / 目標 {format_hours_mins(goal_minutes)}"
+    return text + " ・ 達成！" if done_minutes >= goal_minutes else text
+
+
 def summarize_by_task(records: pd.DataFrame) -> pd.Series:
     summary = records.groupby("作業内容")["分"].sum()
     return summary[summary > 0].sort_values(ascending=False)

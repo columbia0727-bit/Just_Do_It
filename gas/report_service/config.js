@@ -10,7 +10,8 @@
  *
  * スプレッドシートに自動作成されるシート
  *   users  : user_id, email, status(active / unsubscribed), created_at,
- *            report_weekday(0=月 … 6=日), report_hour, next_report_at, last_report_at
+ *            report_weekday(0=月 … 6=日), report_hour, next_report_at, last_report_at,
+ *            weekly_goal_minutes(週の目標。アプリの設定で選ぶ。0 または空なら目標なし)
  *   tokens : token_hash, user_id, created_at  … アプリ（端末）ごとの認証トークン（ハッシュのみ保存）
  *   logs   : user_id, datetime, task, minutes, log_id … LOG_RETENTION_DAYS より古い記録は自動削除
  *            log_id はアプリが記録の内容から作るID。再送された同じ記録を二重に保存しないためと、
@@ -35,13 +36,15 @@
 const SHEET_HEADERS = {
   users: [
     "user_id", "email", "status", "created_at",
-    "report_weekday", "report_hour", "next_report_at", "last_report_at",
+    "report_weekday", "report_hour", "next_report_at", "last_report_at", "weekly_goal_minutes",
   ],
   tokens: ["token_hash", "user_id", "created_at"],
   logs: ["user_id", "datetime", "task", "minutes", "log_id"],
   deleted: ["user_id", "log_id", "deleted_at"],
 };
 const USER_SCHEDULE_COLUMN = 5; // report_weekday から last_report_at までの4列
+const USER_GOAL_COLUMN = 9; // weekly_goal_minutes（週の目標。0 なら目標なし）
+const MAX_GOAL_MINUTES = 100 * 60;
 const LOG_ID_COLUMN = 5;
 
 // レポートを届けるタイミング（アプリの設定画面で選ぶ）

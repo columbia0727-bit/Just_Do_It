@@ -87,6 +87,25 @@ function parseSchedule_(data, optional) {
   return { weekday: weekday, hour: hour };
 }
 
+// 週の目標（分）。アプリから送られた値を検証する（0 は目標なし）
+function parseGoal_(value) {
+  const minutes = Number(value);
+  if (!Number.isInteger(minutes) || minutes < 0 || minutes > MAX_GOAL_MINUTES) {
+    fail_("週の目標の指定が正しくありません", "invalid");
+  }
+  return minutes;
+}
+
+// シートに保存された週の目標（分）。空・不正な値は 0（目標なし）
+function readGoal_(value) {
+  const minutes = Number(value);
+  return Number.isInteger(minutes) && minutes > 0 && minutes <= MAX_GOAL_MINUTES ? minutes : 0;
+}
+
+function writeGoal_(users, row, minutes) {
+  writeTextValues_(users, row, USER_GOAL_COLUMN, [minutes]);
+}
+
 // シートに保存された値を { weekday, hour } にする（空の場合は既定のタイミング）
 function normalizeSchedule_(weekday, hour) {
   if (weekday === "" || hour === "") {

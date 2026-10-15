@@ -161,6 +161,24 @@ class FetchAndApplyTest(unittest.TestCase):
             again = sync.apply(state)
         self.assertIsNone(again.schedule_updated)  # すでに同じなら、更新なし
 
+    def test_apply_follows_goal_changed_on_other_pc(self):
+        schedule = report_service.get_schedule(config.load_config())
+        with mock.patch.object(report_service, "start_sync"):
+            result = sync.apply(sync.ServerState([], set(), schedule, 400, goal_minutes=180))
+            same = sync.apply(sync.ServerState([], set(), schedule, 400, goal_minutes=180))
+            old_server = sync.apply(sync.ServerState([], set(), schedule, 400))  # 目標を返さない古いサーバー
+            unknown = sync.apply(sync.ServerState([], set(), schedule, 400, goal_minutes=7))  # アプリで選べない値
+        self.assertEqual((result.goal_updated, same.goal_updated), (180, None))
+        self.assertIsNone(old_server.goal_updated)
+        self.assertIsNone(unknown.goal_updated)
+        self.assertEqual(config.load_preferences().weekly_goal_minutes, 180)
+        self.assertEqual(config.load_config()["report_email"], "me@example.com", "ほかの設定を消してしまう")
+
+        with mock.patch.object(report_service, "start_sync"):
+            cleared = sync.apply(sync.ServerState([], set(), schedule, 400, goal_minutes=0))
+        self.assertEqual(cleared.goal_updated, 0, "ほかの PC で目標なしに戻したのに、そろわない")
+        self.assertEqual(config.load_preferences().weekly_goal_minutes, 0)
+
     def test_apply_follows_email_changed_on_other_pc(self):
         schedule = report_service.get_schedule(config.load_config())
         with mock.patch.object(report_service, "start_sync"):
