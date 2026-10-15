@@ -19,6 +19,10 @@
 | :---: | :---: | :---: |
 | ![記録画面](docs/record.png) | ![記録一覧](docs/history.png) | ![ダークモード](docs/dark.png) |
 
+| あとから記録（カレンダー） | 設定（週の目標など） | 週次レポートのメール |
+| :---: | :---: | :---: |
+| ![あとから記録](docs/calendar.png) | ![設定](docs/settings.png) | <img src="docs/report.png" alt="週次レポートのメール" width="300"> |
+
 ---
 
 ## 📥 ダウンロード

@@ -5,6 +5,8 @@
 
 ## [未リリース]
 
+## [1.5.0] - 2026-10-15
+
 ### 更新するときの注意
 - **配信サービス（GAS）を自分で動かしている場合**：`Code.js` は `gas/report_service/` の9つのファイルに分かれた。README の手順で自動デプロイを設定するか、すべてのファイルを貼り付けて、新しいバージョンとしてデプロイし直す（週次レポートの新しい内容に必要）
 
@@ -125,7 +127,8 @@
 
 - 最初のリリース。集中タイマー（5分・25分）、作業の記録（CSV）、グラフでの振り返り
 
-[未リリース]: https://github.com/columbia0727-bit/Just_Do_It/compare/v1.4.0...HEAD
+[未リリース]: https://github.com/columbia0727-bit/Just_Do_It/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/columbia0727-bit/Just_Do_It/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/columbia0727-bit/Just_Do_It/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/columbia0727-bit/Just_Do_It/compare/v1.2.2...v1.3.0
 [1.2.2]: https://github.com/columbia0727-bit/Just_Do_It/compare/v1.2.1...v1.2.2
