@@ -108,7 +108,7 @@ Python などのインストールは不要です。[Releases](../../releases/la
 タイミングは1人につき1つです。あとから変更した PC の設定が、すべての PC に反映されます。
 
 **Q. 不具合が起きたら？**
-予期しないエラーの内容は、保存場所の `log/error.log` に記録されます。
+「設定」を開き、いちばん下の「問い合わせ用の情報をコピー」を押してから、[Issues](../../issues/new/choose) の「不具合の報告」に貼り付けて送ってください（GitHub のアカウントが無い場合は、開発者にメッセージで送ってください）。バージョン・OS・最近のエラーなどが入り、作業内容とメールアドレスは入りません。予期しないエラーの内容は、保存場所の `log/error.log` にも記録されます。
 
 ---
 
@@ -215,7 +215,7 @@ just-do-it/
 ├── docs/                      # README 用スクリーンショット（サンプルの記録で撮影）
 ├── JustDoIt.spec              # ビルド設定
 ├── CLAUDE.md                  # Claude Code で開発するときの決まりごと
-└── .github/workflows/build.yml
+└── .github/                   # GitHub Actions（workflows/）、不具合の報告フォーム（ISSUE_TEMPLATE/）
 ```
 
 ### ソースから実行・テスト
