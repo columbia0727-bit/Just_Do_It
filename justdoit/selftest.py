@@ -106,7 +106,7 @@ def _run_screens(lines: list[str]) -> bool:
 
         timer.show_manual_record(app)
         root.update()
-        pickers = [w for w in _find_widgets(root, "Label") if isinstance(w, DatePicker)]
+        pickers = [w for w in _find_widgets(root, "Canvas") if isinstance(w, DatePicker)]
         if not pickers:
             raise RuntimeError("手動記録に日付の欄がありません")
         pickers[0].open()
@@ -144,7 +144,10 @@ def _run_screens(lines: list[str]) -> bool:
     # グラフは matplotlib のフォントなどが同梱されていないと描けないので、描けたかも確かめる
     dashboard.show_dashboard(app, "week")
     root.update()
-    if not _find_widgets(root, "Canvas"):
+    # （ボタンも Canvas で描いているので、それ以外の Canvas があるかで確かめる）
+    from justdoit.ui.theme import PillButton
+
+    if not [w for w in _find_widgets(root, "Canvas") if not isinstance(w, PillButton)]:
         errors.append("振り返りのグラフが表示されていません")
 
     app.close_guard = None

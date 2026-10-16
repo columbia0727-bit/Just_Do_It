@@ -288,7 +288,14 @@ def ring_image(size: int, progress: float, thickness: int) -> ImageTk.PhotoImage
     return _to_photo(image, (size, size))
 
 
-class PillButton(tk.Label):
+# ボタンの文字を、真ん中からどれだけ上に描くか（文字の大きさに対する割合）。
+# Mac の日本語フォント（ヒラギノ）は、Tk の言う「真ん中」に置くと約2pt 下にずれて見えるため、上に寄せる
+# （画面を撮って文字の上端・下端を測り、12pt のボタンで文字がちょうど真ん中に来る値にした）。
+# Windows（Yu Gothic UI）は見た目をまだ確かめられていないので、ずらさない
+TEXT_RAISE = 0.15 if sys.platform == "darwin" else 0.0
+
+
+class PillButton(tk.Canvas):
     """角の丸いボタン。width を省略すると、pack(fill="x") などで広げた幅に合わせて描き直す
 
     kind: "primary"（塗りつぶし・1画面に1つ）/ "secondary"（枠線）/ "chip"（小さな候補）/
@@ -296,6 +303,8 @@ class PillButton(tk.Label):
           "select"（選択欄。角丸を小さくして入力欄に似せる）
     マウスを乗せたときはカーソルを変えず、ボタンの色だけを変える（指の形のカーソルは Mac で不自然に見えるため）
     Tab キーで選ぶと、文字色の枠で囲んで示し、Enter・スペースキーで押せる
+    角丸の画像の上に文字を重ねて描く。Label の画像と文字を重ねる方法では文字の位置を調整できず、
+    Mac で文字が下にずれて見えたため、Canvas にして文字の高さを決めている。
     """
 
     def __init__(
@@ -325,29 +334,33 @@ class PillButton(tk.Label):
             "tab_active": (C.subtle, C.subtle, None, C.text),
             "select": (C.surface, C.subtle, C.border, C.text),
         }[kind]
-        super().__init__(
-            parent,
-            text=text,
-            font=ui_font(size, bold),
-            fg=fg,
-            bg=parent["bg"],
-            compound="center",
-            # 余白があると画像より広がり、幅に合わせて描き直すたびに広がり続けるので 0 にする
-            bd=0,
-            padx=0,
-            pady=0,
-            highlightthickness=0,
-        )
+        self.font = ui_font(size, bold)
         self.height = px(height)
         self.radius = px(8) if kind == "select" else self.height // 2
+        self.text_raise = size * TEXT_RAISE
+        if width is None and kind in ("chip", "chip_disabled", "tab", "tab_active"):
+            # 文字の幅に合わせる
+            width = round(tkfont.Font(font=self.font).measure(text) / _scale) + 28
+        self.fixed_width = px(width) if width else None
+        initial_width = self.fixed_width or px(60)
+        super().__init__(
+            parent,
+            width=initial_width,
+            height=self.height,
+            bg=parent["bg"],
+            bd=0,
+            highlightthickness=0,
+            # 文字の選択・入力はしないが、色はすべて配色からとる
+            selectbackground=C.subtle,
+            selectforeground=C.text,
+            insertbackground=C.text,
+        )
         self.images: dict[tuple[int, bool, bool], ImageTk.PhotoImage] = {}
         self.hovering = False
         self.focused = False
-        if width is None and kind in ("chip", "chip_disabled", "tab", "tab_active"):
-            # 文字の幅に合わせる
-            width = round(tkfont.Font(font=self["font"]).measure(text) / _scale) + 28
-        self.fixed_width = px(width) if width else None
-        self.draw(self.fixed_width or px(60))
+        self.image_item = self.create_image(0, 0, anchor="nw")
+        self.text_item = self.create_text(0, 0, text=text, font=self.font, fill=fg)
+        self.draw(initial_width)
 
         if command:
             self.bind("<Button-1>", lambda event: command())
@@ -359,6 +372,20 @@ class PillButton(tk.Label):
             self.bind("<FocusOut>", lambda event: self.set_focus(False))
         if not self.fixed_width:
             self.bind("<Configure>", lambda event: self.draw(event.width))
+
+    def lift(self, aboveThis=None) -> None:  # type: ignore[override]
+        """部品としての重なり順を上げる（Tab キーで選ぶ順に使う）
+
+        Canvas の lift は中の図形の重なり順を変えるものなので、ほかの部品と同じ動きに戻す。
+        """
+        tk.Misc.tkraise(self, aboveThis)
+
+    @property
+    def text(self) -> str:
+        return self.itemcget(self.text_item, "text")
+
+    def set_text(self, text: str) -> None:
+        self.itemconfig(self.text_item, text=text)
 
     def draw(self, width: int) -> None:
         self.current_width = width
@@ -372,7 +399,8 @@ class PillButton(tk.Label):
             self.images[key] = rounded_rect_image(
                 width, self.height, self.radius, fill, background, outline=outline, outline_width=outline_width
             )
-        self.config(image=self.images[key])
+        self.itemconfig(self.image_item, image=self.images[key])
+        self.coords(self.text_item, width / 2, self.height / 2 - self.text_raise)
 
     def set_hover(self, hovering: bool) -> None:
         self.hovering = hovering
@@ -464,18 +492,18 @@ class SelectButton(PillButton):
 
     def __init__(self, parent: tk.Widget, values: list[str], selected: int, on_select: Callable[[int], object]):
         self.values = values
-        self.index = selected
+        self.selected_index = selected
         self.on_select = on_select
         # いちばん長い選択肢が入る幅（▾ と左右の余白のぶんを足す）
         width = text_width(values, 11) + 48
         super().__init__(parent, self.label_text(), self.open_menu, kind="select", width=width)
 
     def label_text(self) -> str:
-        return f"{self.values[self.index]}   ▾"
+        return f"{self.values[self.selected_index]}   ▾"
 
     def open_menu(self) -> None:
         menu = tk.Menu(self, tearoff=0, font=ui_font(11))
-        selected = tk.IntVar(value=self.index)
+        selected = tk.IntVar(value=self.selected_index)
         for index, value in enumerate(self.values):
             menu.add_radiobutton(
                 label=value, variable=selected, value=index, command=partial(self.choose, index)
@@ -493,12 +521,12 @@ class SelectButton(PillButton):
     def current(self, index: int | None = None) -> int:
         """選んでいる番号を返す。index を渡すと、その選択肢を選んだ表示にする（on_select は呼ばない）"""
         if index is not None:
-            self.index = index
-            self.config(text=self.label_text())
-        return self.index
+            self.selected_index = index
+            self.set_text(self.label_text())
+        return self.selected_index
 
     def get(self) -> str:
-        return self.values[self.index]
+        return self.values[self.selected_index]
 
 
 def make_select(

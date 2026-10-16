@@ -123,12 +123,12 @@ class ThemeColorsTest(unittest.TestCase):
         chosen = []
         select = theme.make_select(self.root, ["15分", "25分", "50分"], 1, chosen.append)
         self.assertEqual((select.current(), select.get()), (1, "25分"))
-        self.assertIn("25分", select.cget("text"))
+        self.assertIn("25分", select.text)
 
         select.choose(2)  # メニューで「50分」を選んだとき
         self.assertEqual(chosen, [2])
         self.assertEqual(select.get(), "50分")
-        self.assertIn("50分", select.cget("text"))
+        self.assertIn("50分", select.text)
 
         select.current(0)  # 表示だけ戻す（保存に失敗したときなど）。on_select は呼ばない
         self.assertEqual((select.get(), chosen), ("15分", [2]))

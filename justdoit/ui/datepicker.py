@@ -53,7 +53,7 @@ class DatePicker(PillButton):
 
     def choose(self, day: date) -> None:
         self.selected = day
-        self.config(text=self.label_text(day))
+        self.set_text(self.label_text(day))
         if self.on_select:
             self.on_select(day)
 
