@@ -59,13 +59,17 @@ def make_ring_clock(screen: tk.Frame, total_seconds: int) -> Callable[[int], Non
 
 
 def start_countdown(
-    app: JustDoItApp, total_seconds: int, on_tick: Callable[[int], None], on_finish: Callable[[], None]
+    app: JustDoItApp,
+    total_seconds: int,
+    on_tick: Callable[[int], None],
+    on_finish: Callable[[], None],
+    start: datetime | None = None,
 ) -> datetime:
-    """1秒ごとに on_tick(残り秒数) を呼び、0になったら on_finish を呼ぶ。開始時刻を返す
+    """1秒ごとに on_tick(残り秒数) を呼び、0になったら on_finish を呼ぶ。開始時刻（省略すると今）を返す
 
     残り時間は開始時刻との差から毎回計算するので、PC がスリープしてもずれない。
     """
-    start = datetime.now()
+    start = start or datetime.now()
 
     def tick():
         remaining = focus.remaining_seconds(total_seconds, start, datetime.now())
@@ -98,6 +102,7 @@ def show_focus_timer(app: JustDoItApp, duration_seconds: int, done_mins: int = 0
     update_clock = make_ring_clock(screen, duration_seconds)
 
     def time_up():
+        remember_last_seen()
         # 設定画面で選んだ方法で知らせて、そのまま記録画面へ
         # 「5分だけやる」が終わったときは、乗ってきたらそのまま続けられるようにする（このアプリの考え方）
         focus_minutes = config.load_preferences().focus_minutes
@@ -124,6 +129,7 @@ def show_focus_timer(app: JustDoItApp, duration_seconds: int, done_mins: int = 0
 
     def finish_early():
         # 途中で終えても、そこまでの時間を記録できる
+        remember_last_seen()
         show_record_form(app, elapsed_mins(), after_save=app.show_main_menu)
 
     def confirm_close() -> bool:
@@ -135,6 +141,8 @@ def show_focus_timer(app: JustDoItApp, duration_seconds: int, done_mins: int = 0
         )
         if answer:
             finish_early()
+        elif answer is False:
+            focus.clear_unsaved(config.get_unsaved_timer_path())
         return answer is False
 
     def confirm_quit():
@@ -143,11 +151,26 @@ def show_focus_timer(app: JustDoItApp, duration_seconds: int, done_mins: int = 0
             f"ここまでの {elapsed_mins()}分は記録されません。\nタイマーをやめてメニューに戻りますか？",
             parent=app.root,
         ):
+            focus.clear_unsaved(config.get_unsaved_timer_path())
             app.show_main_menu()
+
+    # アプリや PC が落ちても次に起動したときに記録できるよう、記録するまで開始時刻などを残しておく
+    start = datetime.now()
+    unsaved = focus.UnsavedTimer(start, start, duration_seconds, done_mins)
+    focus.save_unsaved(config.get_unsaved_timer_path(), unsaved)
+
+    def remember_last_seen():
+        unsaved.last_seen = datetime.now()
+        focus.save_unsaved(config.get_unsaved_timer_path(), unsaved)
+
+    def tick(remaining: int):
+        update_clock(remaining)
+        if (datetime.now() - unsaved.last_seen).total_seconds() >= focus.HEARTBEAT_SECONDS:
+            remember_last_seen()
 
     make_button(screen, "ここで終える", finish_early).pack(side="bottom", fill="x")
 
-    start = start_countdown(app, duration_seconds, on_tick=update_clock, on_finish=time_up)
+    start_countdown(app, duration_seconds, on_tick=tick, on_finish=time_up, start=start)
     app.close_guard = confirm_close
 
 
@@ -158,15 +181,20 @@ def show_record_form(
     save_text: str = "記録する",
     on_continue: Callable[[], None] | None = None,
     continue_text: str = "",
+    recorded_at: datetime | None = None,
+    note: str = "",
 ) -> None:
-    """やったことを入力して記録する画面（タイマー終了時・途中終了時で共通）
+    """やったことを入力して記録する画面（タイマー終了時・途中終了時・前回記録しなかったタイマーで共通）
 
     on_continue を渡すと「このまま続ける」ボタンを出す（記録はせず、続けた分と合わせて最後に記録する）。
+    記録する・記録しないを決めたら、保存しておいた記録する前のタイマーを消す。
     """
     screen = app.make_screen(RECORD_FORM_SIZE)
 
     make_label(screen, "おつかれさまでした", size=16, bold=True).pack(pady=(16, 0))
     make_label(screen, f"{duration_mins}分", size=11, color=C.muted).pack()
+    if note:
+        make_label(screen, note, size=10, color=C.muted, wraplength=app.px(CONTENT_WIDTH)).pack()
 
     make_label(screen, "何をやった？", size=11).pack(anchor="w", pady=(20, 4))
     task_entry = make_task_input(app, screen)
@@ -179,12 +207,14 @@ def show_record_form(
             error_label.config(text="やったことを入力してください")
             return
         # 保存できなかったときは入力した内容を残したまま、この画面にとどまる
-        if not app.save_record(task, duration_mins):
+        if not app.save_record(task, duration_mins, recorded_at=recorded_at):
             return
+        focus.clear_unsaved(config.get_unsaved_timer_path())
         app.bring_to_front(False)
         after_save()
 
     def skip():
+        focus.clear_unsaved(config.get_unsaved_timer_path())
         app.bring_to_front(False)
         app.show_main_menu()
 
@@ -201,7 +231,29 @@ def show_record_form(
     make_button(actions, save_text, save, primary=True).pack(fill="x")
     make_link(actions, "記録しない", skip).pack(pady=(10, 0))
     task_entry.bind("<Return>", save)
-    app.close_guard = lambda: confirm_discard(app, task_entry)
+
+    def confirm_close() -> bool:
+        if not confirm_discard(app, task_entry):
+            return False
+        focus.clear_unsaved(config.get_unsaved_timer_path())
+        return True
+
+    app.close_guard = confirm_close
+
+
+def show_unsaved_record(app: JustDoItApp, unsaved: focus.UnsavedTimer) -> None:
+    """前回、記録する前にアプリや PC が終了したタイマーを記録する画面（起動したときに出す）
+
+    日時は、最後にアプリが動いていた時刻で記録する。
+    """
+    when = unsaved.last_seen
+    show_record_form(
+        app,
+        unsaved.minutes(),
+        after_save=app.show_main_menu,
+        recorded_at=when,
+        note=f"前回のタイマー（{when.month}/{when.day} {when:%H:%M} ごろまで）が記録されていません",
+    )
 
 
 def make_task_input(app: JustDoItApp, screen: tk.Frame, content_width: int = CONTENT_WIDTH) -> tk.Entry:

@@ -73,7 +73,7 @@ def _check_token_vault(lines: list[str]) -> bool:
 
 
 def _run_screens(lines: list[str]) -> bool:
-    from justdoit import config, records, report_service, updates
+    from justdoit import config, focus, records, report_service, updates
 
     try:
         root = tk.Tk()
@@ -99,6 +99,8 @@ def _run_screens(lines: list[str]) -> bool:
     root.report_callback_exception = lambda *exc: errors.append("".join(traceback.format_exception(*exc)))
     app = app_module.JustDoItApp(root)
 
+    unsaved = focus.UnsavedTimer(now - timedelta(minutes=20), now - timedelta(minutes=8), 25 * 60)
+
     def open_calendar() -> None:
         from justdoit.ui.datepicker import DatePicker
 
@@ -114,6 +116,7 @@ def _run_screens(lines: list[str]) -> bool:
         ("初回の案内", app.show_welcome),
         ("集中タイマー", lambda: timer.show_focus_timer(app, 25 * 60)),
         ("記録画面", lambda: timer.show_record_form(app, 25, after_save=app.show_main_menu)),
+        ("前回記録しなかったタイマー", lambda: timer.show_unsaved_record(app, unsaved)),
         ("休憩タイマー", lambda: timer.show_break_timer(app)),
         ("手動記録", lambda: timer.show_manual_record(app)),
         ("手動記録（カレンダー）", open_calendar),

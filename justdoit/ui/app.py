@@ -10,7 +10,7 @@ import tkinter as tk
 from tkinter import messagebox
 import webbrowser
 
-from justdoit import config, notify, report_service, sync, updates
+from justdoit import config, focus, notify, report_service, sync, updates
 from justdoit.records import (
     append_record_to_csv,
     format_hours_mins,
@@ -80,7 +80,14 @@ class JustDoItApp:
         # 同期が終わったら呼ぶ、今の画面の関数（設定画面が結果を表示するため。画面を切り替えると空にする）
         self.sync_listeners: list[Callable[[sync.SyncResult | None, Exception | None], None]] = []
 
-        if is_first_launch():
+        # 前回、記録する前にアプリや PC が終了したタイマーがあれば、まず記録できるようにする
+        unsaved = focus.load_unsaved(config.get_unsaved_timer_path())
+        if unsaved and not unsaved.worth_asking():
+            focus.clear_unsaved(config.get_unsaved_timer_path())
+            unsaved = None
+        if unsaved:
+            timer.show_unsaved_record(self, unsaved)
+        elif is_first_launch():
             self.show_welcome()
         else:
             self.show_main_menu()

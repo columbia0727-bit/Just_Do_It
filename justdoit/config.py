@@ -48,6 +48,11 @@ def get_report_queue_path() -> Path:
     return get_data_dir() / "log" / "report_queue.json"
 
 
+def get_unsaved_timer_path() -> Path:
+    """記録する前のタイマー（アプリや PC が落ちても、次に起動したときに記録できるように残す）"""
+    return get_data_dir() / "log" / "unsaved_timer.json"
+
+
 def get_config_path() -> Path:
     return get_data_dir() / "config.json"
 
