@@ -2,7 +2,6 @@
 
 from collections.abc import Callable
 from datetime import datetime
-import platform
 import queue
 import sys
 import threading
@@ -52,7 +51,7 @@ class JustDoItApp:
 
         # Windows の表示倍率（125%・150% など）。画面サイズや余白をこの倍率で広げる
         # （Mac は OS が拡大するので 1 のまま）
-        self.scale = self.root.winfo_fpixels("1i") / 96 if platform.system() == "Windows" else 1.0
+        self.scale = self.root.winfo_fpixels("1i") / 96 if sys.platform == "win32" else 1.0
         theme.set_scale(self.scale)
         # タイマーなどで予約した after 処理（画面を切り替えるときに取り消す）
         self.after_id: str | None = None

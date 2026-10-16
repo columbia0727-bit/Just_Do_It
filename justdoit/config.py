@@ -4,7 +4,6 @@ from dataclasses import asdict, dataclass, fields
 import json
 import os
 from pathlib import Path
-import platform
 import sys
 from typing import Protocol
 
@@ -31,10 +30,9 @@ def get_data_dir() -> Path:
     if not getattr(sys, "frozen", False):
         return PROJECT_DIR
 
-    system = platform.system()
-    if system == "Windows":
+    if sys.platform == "win32":
         base = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
-    elif system == "Darwin":
+    elif sys.platform == "darwin":
         base = Path.home() / "Library" / "Application Support"
     else:
         base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))

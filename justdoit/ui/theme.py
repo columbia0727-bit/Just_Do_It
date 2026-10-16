@@ -8,7 +8,6 @@ from collections.abc import Callable
 from dataclasses import dataclass, fields
 from functools import partial
 import math
-import platform
 import subprocess
 import sys
 import tkinter as tk
@@ -227,9 +226,9 @@ def _set_title_bar_dark(root: tk.Tk, dark: bool) -> None:
 # フォント
 # ==========================================
 UI_FONT_FAMILY = {
-    "Darwin": "Hiragino Sans",
-    "Windows": "Yu Gothic UI",
-}.get(platform.system(), "Noto Sans CJK JP")
+    "darwin": "Hiragino Sans",
+    "win32": "Yu Gothic UI",
+}.get(sys.platform, "Noto Sans CJK JP")
 
 
 def ui_font(size: int = 12, bold: bool = False) -> tuple:

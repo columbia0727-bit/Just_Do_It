@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from functools import partial
-import platform
+import sys
 import tkinter as tk
 from tkinter import messagebox
 from typing import TYPE_CHECKING
@@ -39,9 +39,9 @@ TICK_STEP = {"week": 1, "month": 5, "year": 1}
 
 # グラフの日本語フォント（OSごとに、入っているものを先頭から使う）
 rcParams["font.sans-serif"] = {
-    "Darwin": ["Hiragino Sans", "Hiragino Kaku Gothic ProN", "Arial"],
-    "Windows": ["Yu Gothic", "Meiryo", "MS Gothic", "Arial"],
-}.get(platform.system(), ["Noto Sans CJK JP", "IPAexGothic", "DejaVu Sans"])
+    "darwin": ["Hiragino Sans", "Hiragino Kaku Gothic ProN", "Arial"],
+    "win32": ["Yu Gothic", "Meiryo", "MS Gothic", "Arial"],
+}.get(sys.platform, ["Noto Sans CJK JP", "IPAexGothic", "DejaVu Sans"])
 rcParams["axes.unicode_minus"] = False
 
 
