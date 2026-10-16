@@ -37,7 +37,7 @@ if TYPE_CHECKING:
     from justdoit.ui.app import JustDoItApp
 
 SETTINGS_SIZE = (460, 620)
-REPORT_PROBLEM_SIZE = (420, 400)
+REPORT_PROBLEM_SIZE = (420, 370)
 REPORT_TEXT_WIDTH = 364  # 「不具合を報告する」画面の、折り返す文章の幅（画面の幅から余白を引いた幅）
 TABS = [("timer", "全般"), ("report", "週次レポート")]
 
@@ -106,7 +106,10 @@ def show_report_problem(app: JustDoItApp) -> None:
     ).pack(anchor="w", pady=(4, 18))
 
     make_label(screen, "起きたことと一緒に貼り付けて、送ってください。", size=11).pack(anchor="w", pady=(0, 12))
-    make_button(screen, "GitHub の報告フォームを開く", lambda: webbrowser.open(support.BUG_REPORT_URL)).pack(fill="x")
+    # この画面でいちばんしてほしい操作なので、塗りつぶしのボタンにする（1画面に1つ）
+    make_button(
+        screen, "GitHub の報告フォームを開く", lambda: webbrowser.open(support.BUG_REPORT_URL), primary=True
+    ).pack(fill="x")
     make_label(
         screen,
         "GitHub のアカウントが無い場合は、次のアドレスへメールで送ってください。",
@@ -118,18 +121,18 @@ def show_report_problem(app: JustDoItApp) -> None:
     address_row = tk.Frame(screen, bg=screen["bg"])
     address_row.pack(fill="x")
     # 入力欄は文字の左に少し余白があるので、そのぶん右に寄せて、ほかの文字と左端をそろえる
-    make_selectable_text(app, address_row, support.CONTACT_EMAIL).pack(side="left", padx=(app.px(2), 0))
-    note = make_label(screen, size=10, color=C.muted, wraplength=app.px(REPORT_TEXT_WIDTH), justify="left")
-    note.pack(anchor="w", pady=(6, 0))
+    # 2つ目の送り先として目に入るよう、アドレスはアクセント色にする
+    make_selectable_text(app, address_row, support.CONTACT_EMAIL, color=C.accent).pack(
+        side="left", padx=(app.px(2), 0)
+    )
 
     # クリップボードには1つしか入らないので、アドレスをコピーすると情報は消える。
-    # 宛先に貼ったあと、本文に貼る情報をコピーし直せるよう案内する
+    # 本文に貼る情報は、下の「情報をもう一度コピーする」でコピーし直せる
     def copy_address() -> None:
         app.root.clipboard_clear()
         app.root.clipboard_append(support.CONTACT_EMAIL)
         copy_link.config(text="コピーしました")
         again.config(text="情報をもう一度コピーする")
-        note.config(text="宛先に貼り付けたら、下の「情報をもう一度コピーする」を押して、\n本文に貼り付けてください。")
 
     copy_link = make_link(address_row, "コピー", copy_address)
     copy_link.pack(side="left", padx=(app.px(12), 0))
@@ -139,13 +142,12 @@ def show_report_problem(app: JustDoItApp) -> None:
         copy_support_info(app)
         again.config(text="コピーしました")
         copy_link.config(text="コピー")
-        note.config(text="")
 
     again = make_link(screen, "情報をもう一度コピーする", copy_again)
     again.pack(side="bottom")
 
 
-def make_selectable_text(app: JustDoItApp, parent: tk.Widget, text: str) -> tk.Entry:
+def make_selectable_text(app: JustDoItApp, parent: tk.Widget, text: str, color: str | None = None) -> tk.Entry:
     """選択してコピーできる文字（見た目はほかの文字と同じ。Label は選択できないため、書き換えられない入力欄で出す）"""
     font = tkfont.Font(font=ui_font(12))
     # 入力欄の幅は「0」の幅の何個分かで決まるので、文字の幅から計算する（広すぎると、横の「コピー」が離れる）
@@ -158,7 +160,7 @@ def make_selectable_text(app: JustDoItApp, parent: tk.Widget, text: str) -> tk.E
         highlightthickness=0,
         bg=parent["bg"],
         readonlybackground=parent["bg"],
-        fg=C.text,
+        fg=color or C.text,
         selectbackground=C.accent,
         selectforeground=C.on_accent,
         insertbackground=C.text,
