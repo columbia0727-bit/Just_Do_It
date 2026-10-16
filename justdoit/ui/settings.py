@@ -118,7 +118,7 @@ def show_report_problem(app: JustDoItApp) -> None:
     address_row = tk.Frame(screen, bg=screen["bg"])
     address_row.pack(fill="x")
     # 入力欄は文字の左に少し余白があるので、そのぶん右に寄せて、ほかの文字と左端をそろえる
-    make_selectable_text(address_row, support.CONTACT_EMAIL).pack(side="left", padx=(app.px(2), 0))
+    make_selectable_text(app, address_row, support.CONTACT_EMAIL).pack(side="left", padx=(app.px(2), 0))
     note = make_label(screen, size=10, color=C.muted, wraplength=app.px(REPORT_TEXT_WIDTH), justify="left")
     note.pack(anchor="w", pady=(6, 0))
 
@@ -145,7 +145,7 @@ def show_report_problem(app: JustDoItApp) -> None:
     again.pack(side="bottom")
 
 
-def make_selectable_text(parent: tk.Widget, text: str) -> tk.Entry:
+def make_selectable_text(app: JustDoItApp, parent: tk.Widget, text: str) -> tk.Entry:
     """選択してコピーできる文字（見た目はほかの文字と同じ。Label は選択できないため、書き換えられない入力欄で出す）"""
     font = tkfont.Font(font=ui_font(12))
     # 入力欄の幅は「0」の幅の何個分かで決まるので、文字の幅から計算する（広すぎると、横の「コピー」が離れる）
@@ -156,6 +156,7 @@ def make_selectable_text(parent: tk.Widget, text: str) -> tk.Entry:
         relief="flat",
         bd=0,
         highlightthickness=0,
+        bg=parent["bg"],
         readonlybackground=parent["bg"],
         fg=C.text,
         selectbackground=C.accent,
@@ -165,6 +166,13 @@ def make_selectable_text(parent: tk.Widget, text: str) -> tk.Entry:
     )
     entry.insert(0, text)
     entry.config(state="readonly")
+    # Mac では、画面を切り替えてウィンドウの大きさが変わると、入力欄だけ描き直されずに文字が消えることがある
+    # （設定画面からこの画面に移ったときに起きた）。ウィンドウの大きさが変わったら描き直す
+    def redraw() -> None:
+        if entry.winfo_exists():
+            entry.config(readonlybackground=parent["bg"])
+
+    app.bind_key("<Configure>", redraw)
     return entry
 
 
