@@ -184,7 +184,14 @@ def _style_ttk(root: tk.Tk) -> None:
     )
 
     style.configure(
-        "Treeview", background=C.surface, fieldbackground=C.surface, foreground=C.text, borderwidth=0, **common
+        "Treeview",
+        background=C.surface,
+        fieldbackground=C.surface,
+        foreground=C.text,
+        # Tk 9 で増えた、1行おきに色を変える表示の色（このアプリでは使わないが、配色の外の色を残さない）
+        stripedbackground=C.surface,
+        borderwidth=0,
+        **common,
     )
     style.map(
         "Treeview",
