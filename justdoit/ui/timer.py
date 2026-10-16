@@ -43,8 +43,11 @@ def format_clock(seconds: int) -> str:
     return f"{mins:02d}:{secs:02d}"
 
 
-def make_ring_clock(screen: tk.Frame, total_seconds: int) -> Callable[[int], None]:
-    """残り時間を、数字と円形の進捗リングで表示する。残り秒数を渡して表示を更新する関数を返す"""
+def make_ring_clock(screen: tk.Frame, total_seconds: int, name: str) -> Callable[[int], None]:
+    """残り時間を、数字と円形の進捗リングで表示する。残り秒数を渡して表示を更新する関数を返す
+
+    ウィンドウのタイトルにも「12:34 集中」のように出す（最小化していても、タスクバーなどで残り時間がわかるように）。
+    """
     clock = tk.Label(screen, font=ui_font(34), fg=C.text, bg=screen["bg"], compound="center", bd=0)
     clock.pack(pady=(px(8), 0))
     # 表示中の画像を持っておく（Python 側で参照が無くなると、Tk の画像も消えてしまう）
@@ -53,6 +56,7 @@ def make_ring_clock(screen: tk.Frame, total_seconds: int) -> Callable[[int], Non
     def update(remaining: int) -> None:
         shown["ring"] = ring_image(px(RING_SIZE), remaining / total_seconds, px(RING_THICKNESS))
         clock.config(image=shown["ring"], text=format_clock(remaining))
+        screen.winfo_toplevel().title(f"{format_clock(remaining)} {name} - {config.APP_NAME}")
 
     update(total_seconds)
     return update
@@ -99,7 +103,7 @@ def show_focus_timer(app: JustDoItApp, duration_seconds: int, done_mins: int = 0
 
     title = f"集中（あと{duration_mins}分・合計{total_mins}分）" if done_mins else f"集中（{duration_mins}分）"
     make_label(screen, title, size=11, color=C.muted).pack()
-    update_clock = make_ring_clock(screen, duration_seconds)
+    update_clock = make_ring_clock(screen, duration_seconds, "集中")
 
     def time_up():
         remember_last_seen()
@@ -293,7 +297,7 @@ def show_break_timer(app: JustDoItApp) -> None:
 
     # 集中タイマーと高さをそろえるため、「戻る」の分の余白をとる
     make_label(screen, "休憩", size=11, color=C.muted).pack(pady=(px(28), 0))
-    update_clock = make_ring_clock(screen, break_seconds)
+    update_clock = make_ring_clock(screen, break_seconds, "休憩")
 
     make_button(screen, "休憩を終える", app.show_main_menu).pack(side="bottom", fill="x")
 

@@ -177,6 +177,8 @@ class JustDoItApp:
         self.close_guard = None
         self.on_menu = False
         self.sync_listeners = []
+        # タイマーが残り時間を出していたタイトルを元に戻す
+        self.root.title(config.APP_NAME)
         for widget in self.root.winfo_children():
             widget.destroy()
         # 「デバイスに合わせる」のときは、画面を切り替えるたびに OS の設定を確かめて色を合わせる
