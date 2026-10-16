@@ -4,9 +4,12 @@
 OS ごとの分岐は sys.platform で書く（mypy が OS ごとに見分け、ほかの OS にない機能をエラーにしないように）。
 """
 
+import logging
 import subprocess
 import sys
 from xml.sax.saxutils import escape
+
+logger = logging.getLogger(__name__)
 
 # Windows の通知は、登録済みのアプリの名前（AppUserModelID）で出す必要がある。
 # 配布用のインストーラーを作っていないため、Windows に最初から入っている PowerShell の名前を借りる
@@ -41,7 +44,7 @@ def show_notification(title: str, message: str) -> None:
         else:
             subprocess.Popen(["notify-send", title, message])
     except OSError as e:
-        print(f"⚠️ 通知を出せませんでした: {e}")
+        logger.warning("通知を出せませんでした: %s", e)
 
 
 def _show_windows_toast(title: str, message: str) -> None:

@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import logging
 import queue
 import threading
 import tkinter as tk
@@ -20,6 +21,7 @@ from justdoit.ui.theme import C, make_button, make_entry, make_label, make_link,
 if TYPE_CHECKING:
     from justdoit.ui.app import JustDoItApp
 
+logger = logging.getLogger(__name__)
 TEXT_WIDTH = 410  # 折り返す文章の幅（設定画面の「全般」タブでも使う）
 
 # on_done(result, error): 成功なら result に結果、失敗なら error に例外が入る
@@ -427,7 +429,7 @@ def update_schedule(app: JustDoItApp, picker: SchedulePicker, status: tk.Label) 
         try:
             config.save_config(settings)
         except OSError as e:
-            print(f"⚠️ 届くタイミングを保存できませんでした: {e}")
+            logger.warning("届くタイミングを保存できませんでした: %s", e)
         status.config(text=f"{report_service.format_schedule(weekday, hour)}に届くよう変更しました")
 
     token = config.get_report_token()

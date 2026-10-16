@@ -2,12 +2,12 @@
 
 from collections.abc import Callable
 from datetime import datetime
+import logging
 import queue
 import sys
 import threading
 import tkinter as tk
 from tkinter import messagebox
-import traceback
 import webbrowser
 
 from justdoit import config, notify, report_service, sync, updates
@@ -23,6 +23,7 @@ from justdoit.records import (
 from justdoit.ui import dashboard, settings, theme, timer
 from justdoit.ui.theme import C, make_back_button, make_button, make_label, make_link
 
+logger = logging.getLogger(__name__)
 MENU_SIZE = (320, 340)
 WELCOME_SIZE = (360, 460)
 
@@ -144,7 +145,9 @@ class JustDoItApp:
                 # メールのリンクなどから配信停止されていた
                 report_service.clear_registration()
             if error:
-                print(f"⚠️ 同期できませんでした: {error}")
+                # つながらないだけ（オフライン）なら、次に起動したときにまた同期するので error.log には残さない
+                offline = getattr(error, "code", None) in ("network", "busy")
+                logger.log(logging.INFO if offline else logging.WARNING, "同期できませんでした: %s", error)
             # ほかの PC の記録・週の目標が届いたら、メニューの「今日の合計」「週の目標」を表示し直す
             if result and (result.changed or result.goal_updated is not None) and self.on_menu:
                 self.show_main_menu()
@@ -237,9 +240,8 @@ class JustDoItApp:
 
         配布版は画面だけのアプリで、エラーの内容がどこにも表示されないため、原因を調べられるようにファイルに残す。
         """
-        details = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
-        print(details)
-        log_path = config.append_error_log(details)
+        logger.error("予期しないエラーが起きました", exc_info=(exc_type, exc_value, exc_traceback))
+        log_path = config.get_error_log_path()
         messagebox.showerror(
             "エラー",
             f"予期しないエラーが起きました。\n\n詳しい内容を次のファイルに保存しました:\n{log_path}",
@@ -291,7 +293,7 @@ class JustDoItApp:
                 parent=self.root,
             )
             return False
-        print(f"【ローカル保存完了】{now_str} - {task} ({duration_mins}分)")
+        logger.info("記録しました: %s %s（%d分）", now_str, task, duration_mins)
 
         # 週次レポートに登録済みなら、送信待ちキューに積んでから別スレッドで送る
         if report_service.is_registered():
@@ -300,7 +302,7 @@ class JustDoItApp:
                     config.get_report_queue_path(), [report_service.make_log(now_str, task, duration_mins)]
                 )
             except OSError as e:
-                print(f"⚠️ 週次レポート用の記録を保存できませんでした: {e}")
+                logger.warning("週次レポート用の記録を保存できませんでした: %s", e)
             report_service.start_sync()
         return True
 
@@ -445,6 +447,7 @@ def run() -> None:
             ctypes.windll.shcore.SetProcessDpiAwareness(1)
         except (AttributeError, OSError):
             ctypes.windll.user32.SetProcessDPIAware()
+    config.setup_logging()
     # 以前のバージョンが config.json に保存した週次レポートのトークンを、資格情報マネージャーに移す
     config.migrate_report_token()
     root = tk.Tk()

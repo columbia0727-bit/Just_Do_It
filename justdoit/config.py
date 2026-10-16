@@ -2,6 +2,7 @@
 
 from dataclasses import asdict, dataclass, fields
 import json
+import logging
 import os
 from pathlib import Path
 import sys
@@ -228,3 +229,29 @@ def append_error_log(details: str) -> Path:
     except OSError:
         pass
     return path
+
+
+class ErrorLogHandler(logging.Handler):
+    """ログの警告・エラーを error.log に残す（配布版は画面だけのアプリで、コンソールに出しても見えないため）"""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        append_error_log(self.format(record))
+
+
+def setup_logging() -> None:
+    """ログの出し先を決める（起動したときに1回呼ぶ）
+
+    警告・エラーは error.log に残す。ソースから起動したときは、記録の保存などの情報もコンソールに出す。
+    """
+    logger = logging.getLogger("justdoit")
+    if logger.handlers:
+        return
+    logger.setLevel(logging.INFO)
+    to_file = ErrorLogHandler(logging.WARNING)
+    to_file.setFormatter(logging.Formatter("%(name)s: %(message)s"))
+    logger.addHandler(to_file)
+    # 配布版（画面だけのアプリ）では sys.stderr が無い
+    if sys.stderr is not None:
+        to_console = logging.StreamHandler()
+        to_console.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+        logger.addHandler(to_console)
