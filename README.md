@@ -190,6 +190,7 @@ just-do-it/
 ├── tools/release_notes.py     # CHANGELOG.md からリリースノートを作る（リリース時に Actions が実行）
 ├── docs/                      # README 用スクリーンショット（サンプルの記録で撮影）
 ├── JustDoIt.spec              # ビルド設定
+├── CLAUDE.md                  # Claude Code で開発するときの決まりごと
 └── .github/workflows/build.yml
 ```
 
