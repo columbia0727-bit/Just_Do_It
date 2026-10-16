@@ -34,6 +34,7 @@ DASHBOARD_SIZE = (720, 540)
 EMPTY_SIZE = (420, 340)
 TOP_TASKS = 5
 MAX_TASK_NAME_LENGTH = 10
+HISTORY_LINK_TEXT = "すべての記録を見る・直す  ›"
 # グラフの横軸の目盛りを何本おきに出すか（月は30本あるので間引く）
 TICK_STEP = {"week": 1, "month": 5, "year": 1}
 
@@ -83,11 +84,14 @@ def show_dashboard(app: JustDoItApp, period: str | None = None, offset: int | No
     side = tk.Frame(body, bg=C.bg)
     side.pack(side="right", fill="y", padx=(24, 0))
     build_top_tasks(side, summary).pack(anchor="w")
-    # 記録の修正・削除は、振り返りの中から開く（メニューをシンプルに保つため）
+
+    # 記録の修正・削除は、振り返りの中から開く（メニューをシンプルに保つため）。
+    # 灰色の文字で右下の端に置いていたときは気づきにくかったので、「よくやったこと」のすぐ下に、
+    # アクセント色と「›」で置く（ボタンにはせず、画面の静かさは保つ）
     def open_history():
         history.show_history(app, back=lambda: show_dashboard(app))
 
-    make_link(side, "すべての記録を見る・直す", open_history).pack(side="bottom", anchor="w", pady=(0, 8))
+    make_link(side, HISTORY_LINK_TEXT, open_history, accent=True).pack(anchor="w", pady=(14, 0))
     build_chart(app, body, summary).pack(side="left", fill="both", expand=True)
 
 
