@@ -126,7 +126,7 @@ def _run_screens(lines: list[str]) -> bool:
         ("記録一覧", lambda: history.show_history(app, back=app.show_main_menu)),
         ("設定（全般）", lambda: settings.show_settings(app, "timer")),
         ("設定（週次レポート）", lambda: settings.show_settings(app, "report")),
-        ("問い合わせ用の情報", lambda: support.support_info(last_sync=None)),
+        ("不具合の報告用の情報", lambda: support.support_info(last_sync=None)),
     ]
     for appearance in ("light", "dark"):
         # 週の目標も決めておき、メニューの「今週 … / 目標 …」も表示する

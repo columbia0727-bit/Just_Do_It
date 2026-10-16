@@ -1,6 +1,6 @@
-"""問い合わせ用の情報（設定画面の「問い合わせ用の情報をコピー」で、メールやメッセージに貼り付けてもらう）
+"""不具合の報告に使う情報と、報告の送り先（設定画面の「不具合を報告する」）
 
-不具合の問い合わせを受けたとき、利用者に「バージョンは？」「OS は？」と何度も聞き返さずに済むよう、
+不具合の報告を受けたとき、利用者に「バージョンは？」「OS は？」と何度も聞き返さずに済むよう、
 原因を絞り込むのに必要な情報を1回でまとめて送ってもらう。
 作業内容・メールアドレス・トークンは含めない（他人に見せたくない内容や、登録の乗っ取りに使える情報のため）。
 """
@@ -14,13 +14,18 @@ from justdoit import __version__, config, records, report_service
 
 RECENT_ERRORS = 3  # error.log から含める、新しいエラーの件数
 
+# 報告の送り先。GitHub の「不具合の報告」フォームと、GitHub のアカウントが無い人のためのメールアドレス
+# （週次レポートの配信サービスと同じ、このアプリ専用のアカウント）
+BUG_REPORT_URL = "https://github.com/columbia0727-bit/Just_Do_It/issues/new?template=bug_report.yml"
+CONTACT_EMAIL = "justdoit.report@gmail.com"
+
 
 def support_info(last_sync: datetime | None, now: datetime | None = None) -> str:
-    """問い合わせ用の情報（last_sync は、この起動で最後に同期できた時刻）"""
+    """不具合の報告に使う情報（last_sync は、この起動で最後に同期できた時刻）"""
     now = now or datetime.now()
     edition = "配布版" if getattr(sys, "frozen", False) else "ソースから起動"
     lines = [
-        f"Just do it. 問い合わせ用の情報（{now:%Y-%m-%d %H:%M}）",
+        f"Just do it. 不具合の報告用の情報（{now:%Y-%m-%d %H:%M}）",
         f"バージョン: {__version__}（{edition}）",
         f"OS: {config.os_description()}",
         f"保存先: {config.get_data_dir()}",

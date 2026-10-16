@@ -61,7 +61,7 @@ def show_settings(app: JustDoItApp, tab: str | None = None) -> None:
 
 
 def build_version(app: JustDoItApp, screen: tk.Frame) -> tk.Frame:
-    """保存先の上: 今のバージョンと「問い合わせ用の情報をコピー」、新しいバージョンがあればダウンロードページへの案内"""
+    """保存先の上: 今のバージョンと「不具合を報告する」、新しいバージョンがあればダウンロードページへの案内"""
     rows = tk.Frame(screen, bg=screen["bg"])
     rows.pack(side="bottom", fill="x", pady=(0, app.px(6)))
     if app.new_release:
@@ -75,22 +75,32 @@ def build_version(app: JustDoItApp, screen: tk.Frame) -> tk.Frame:
     row = tk.Frame(rows, bg=screen["bg"])
     row.pack(fill="x")
     make_label(row, f"バージョン {__version__}", size=9, color=C.muted).pack(side="left")
-    make_link(row, "問い合わせ用の情報をコピー", lambda: copy_support_info(app)).pack(side="right")
+    make_link(row, "不具合を報告する", lambda: report_problem(app)).pack(side="right")
     return rows
 
 
-def copy_support_info(app: JustDoItApp) -> None:
-    """不具合を問い合わせるときに貼り付けてもらう情報を、クリップボードにコピーする"""
+def report_problem(app: JustDoItApp) -> None:
+    """原因を調べるための情報をクリップボードにコピーし、報告の送り先を案内する
+
+    情報をコピーするだけでは、このアプリしか知らない人には送り先がわからないため、
+    GitHub の報告フォームを開くか、アカウントが無ければメールで送るよう案内する。
+    """
     last_sync = app.last_sync[0] if app.last_sync else None
     app.root.clipboard_clear()
     app.root.clipboard_append(support.support_info(last_sync))
-    messagebox.showinfo(
-        "コピーしました",
-        "問い合わせ用の情報（バージョン・OS・最近のエラーなど）をコピーしました。\n"
-        "問い合わせのメールやメッセージに貼り付けて送ってください。\n\n"
-        "作業内容とメールアドレスは含まれていません。",
+    if messagebox.askyesno(
+        "不具合を報告する",
+        # ボタンの文字は OS の言語で「はい / Yes」などと変わるので、文中ではボタンの名前を使わない
+        "原因を調べるための情報（バージョン・OS・最近のエラーなど）をコピーしました。"
+        "作業内容とメールアドレスは入っていません。\n\n"
+        "起きたことと、コピーした情報を貼り付けて、次のどちらかで送ってください。\n"
+        "・GitHub の報告フォーム\n"
+        # アドレスは途中で折り返されないよう、1行にする
+        f"・メール（GitHub のアカウントが無い場合）\n{support.CONTACT_EMAIL}\n\n"
+        "GitHub の報告フォームを開きますか？",
         parent=app.root,
-    )
+    ):
+        webbrowser.open(support.BUG_REPORT_URL)
 
 
 def build_data_folder(app: JustDoItApp, screen: tk.Frame) -> tk.Frame:
