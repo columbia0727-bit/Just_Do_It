@@ -178,6 +178,7 @@ just-do-it/
 ├── justdoit/
 │   ├── config.py              # 保存先・設定ファイル
 │   ├── records.py             # 作業ログ（CSV）の保存・修正・削除と集計
+│   ├── focus.py               # 集中タイマーの判断（残り時間・記録する分数・続けられるか）
 │   ├── report_service.py      # 配信サービスとの通信・送信待ちキュー
 │   ├── sync.py                # ほかの PC との同期
 │   ├── notify.py              # 音・OS の通知

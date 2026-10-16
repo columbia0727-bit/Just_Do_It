@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from PIL import ImageTk
 
-from justdoit import config
+from justdoit import config, focus
 from justdoit.records import RECENT_DAYS, load_records, recent_tasks, recorded_at_on, validate_record
 from justdoit.ui.datepicker import DatePicker
 from justdoit.ui.theme import (
@@ -29,7 +29,7 @@ from justdoit.ui.theme import (
 if TYPE_CHECKING:
     from justdoit.ui.app import JustDoItApp
 
-FOCUS_SHORT_SECONDS = 5 * 60
+FOCUS_SHORT_SECONDS = focus.FOCUS_SHORT_SECONDS
 TIMER_SIZE = (320, 420)
 RECORD_FORM_SIZE = (320, 400)
 MANUAL_RECORD_SIZE = (380, 440)
@@ -68,7 +68,7 @@ def start_countdown(
     start = datetime.now()
 
     def tick():
-        remaining = total_seconds - int((datetime.now() - start).total_seconds())
+        remaining = focus.remaining_seconds(total_seconds, start, datetime.now())
         if remaining > 0:
             on_tick(remaining)
             app.schedule(1000, tick)
@@ -101,7 +101,7 @@ def show_focus_timer(app: JustDoItApp, duration_seconds: int, done_mins: int = 0
         # 設定画面で選んだ方法で知らせて、そのまま記録画面へ
         # 「5分だけやる」が終わったときは、乗ってきたらそのまま続けられるようにする（このアプリの考え方）
         focus_minutes = config.load_preferences().focus_minutes
-        can_continue = not done_mins and duration_seconds == FOCUS_SHORT_SECONDS and focus_minutes > duration_mins
+        can_continue = focus.can_keep_going(duration_seconds, done_mins, focus_minutes)
         extra_mins = focus_minutes - duration_mins
         message = "このまま続けることもできます。" if can_continue else "やったことを記録しましょう。"
         app.notify("集中タイム終了", f"{total_mins}分おつかれさまでした。{message}")
@@ -119,9 +119,8 @@ def show_focus_timer(app: JustDoItApp, duration_seconds: int, done_mins: int = 0
         )
 
     def elapsed_mins() -> int:
-        # 1分未満でも最低「1分」として切り上げる（続けている場合は、それまでの分も足す）
-        elapsed_secs = int((datetime.now() - start).total_seconds())
-        return done_mins + max(1, (elapsed_secs + 59) // 60)
+        # 続けている場合は、それまでの分も足す
+        return done_mins + focus.elapsed_minutes(start, datetime.now())
 
     def finish_early():
         # 途中で終えても、そこまでの時間を記録できる
