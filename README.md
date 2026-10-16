@@ -207,6 +207,7 @@ just-do-it/
 │   ├── updates.py             # 新しいバージョンの確認
 │   ├── net.py                 # HTTPS 通信の共通処理
 │   ├── selftest.py            # ビルドしたアプリの動作確認
+│   ├── support.py             # 問い合わせ用の情報（設定の「問い合わせ用の情報をコピー」）
 │   └── ui/                    # 画面（app・theme・datepicker・timer・history・dashboard・settings・report_settings）
 ├── gas/report_service/        # 週次レポート配信サービス（Google Apps Script）
 ├── tests/                     # 単体テスト

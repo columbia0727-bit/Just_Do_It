@@ -16,7 +16,7 @@ from tkinter import messagebox
 from typing import TYPE_CHECKING
 import webbrowser
 
-from justdoit import __version__, config
+from justdoit import __version__, config, support
 from justdoit.records import format_hours_mins
 from justdoit.ui import theme
 from justdoit.ui.report_settings import TEXT_WIDTH, build_report_section, update_goal
@@ -61,16 +61,36 @@ def show_settings(app: JustDoItApp, tab: str | None = None) -> None:
 
 
 def build_version(app: JustDoItApp, screen: tk.Frame) -> tk.Frame:
-    """保存先の上: 今のバージョンと、新しいバージョンがあればダウンロードページへの案内"""
-    row = tk.Frame(screen, bg=screen["bg"])
-    row.pack(side="bottom", fill="x", pady=(0, app.px(6)))
-    make_label(row, f"バージョン {__version__}", size=9, color=C.muted).pack(side="left")
+    """保存先の上: 今のバージョンと「問い合わせ用の情報をコピー」、新しいバージョンがあればダウンロードページへの案内"""
+    rows = tk.Frame(screen, bg=screen["bg"])
+    rows.pack(side="bottom", fill="x", pady=(0, app.px(6)))
     if app.new_release:
         release = app.new_release
         make_link(
-            row, f"新しいバージョン {release.version} をダウンロード", lambda: webbrowser.open(release.url), accent=True
-        ).pack(side="right")
-    return row
+            rows,
+            f"新しいバージョン {release.version} をダウンロード",
+            lambda: webbrowser.open(release.url),
+            accent=True,
+        ).pack(anchor="w", pady=(0, app.px(4)))
+    row = tk.Frame(rows, bg=screen["bg"])
+    row.pack(fill="x")
+    make_label(row, f"バージョン {__version__}", size=9, color=C.muted).pack(side="left")
+    make_link(row, "問い合わせ用の情報をコピー", lambda: copy_support_info(app)).pack(side="right")
+    return rows
+
+
+def copy_support_info(app: JustDoItApp) -> None:
+    """不具合を問い合わせるときに貼り付けてもらう情報を、クリップボードにコピーする"""
+    last_sync = app.last_sync[0] if app.last_sync else None
+    app.root.clipboard_clear()
+    app.root.clipboard_append(support.support_info(last_sync))
+    messagebox.showinfo(
+        "コピーしました",
+        "問い合わせ用の情報（バージョン・OS・最近のエラーなど）をコピーしました。\n"
+        "問い合わせのメールやメッセージに貼り付けて送ってください。\n\n"
+        "作業内容とメールアドレスは含まれていません。",
+        parent=app.root,
+    )
 
 
 def build_data_folder(app: JustDoItApp, screen: tk.Frame) -> tk.Frame:
