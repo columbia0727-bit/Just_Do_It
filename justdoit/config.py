@@ -5,6 +5,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import platform
 import sys
 from typing import Protocol
 
@@ -220,8 +221,17 @@ def get_error_log_path() -> Path:
     return get_data_dir() / "log" / "error.log"
 
 
+def os_description() -> str:
+    """OS の名前とバージョン（例: 「macOS 15.1」「Windows 11 (10.0.26100)」。問い合わせのときに原因を絞り込むため）"""
+    if sys.platform == "darwin":
+        return f"macOS {platform.mac_ver()[0]}"
+    if sys.platform == "win32":
+        return f"Windows {platform.release()} ({platform.version()})"
+    return f"{platform.system()} {platform.release()}"
+
+
 def append_error_log(details: str) -> Path:
-    """エラーの内容を日時とバージョンつきで log/error.log に追記し、そのファイルの場所を返す（書けなくても止めない）"""
+    """エラーの内容を日時・バージョン・OS つきで error.log に追記し、ファイルの場所を返す（書けなくても止めない）"""
     from datetime import datetime
 
     from justdoit import __version__
@@ -230,7 +240,8 @@ def append_error_log(details: str) -> Path:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "a", encoding="utf-8") as f:
-            f.write(f"--- {datetime.now():%Y-%m-%d %H:%M:%S}（バージョン {__version__}）\n{details.rstrip()}\n\n")
+            header = f"--- {datetime.now():%Y-%m-%d %H:%M:%S}（バージョン {__version__}・{os_description()}）"
+            f.write(f"{header}\n{details.rstrip()}\n\n")
     except OSError:
         pass
     return path

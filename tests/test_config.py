@@ -161,6 +161,8 @@ class ErrorLogTest(unittest.TestCase):
 
         text = config.get_error_log_path().read_text(encoding="utf-8")
         self.assertIn("通知を出せませんでした", text)
+        # 問い合わせのときに原因を絞り込めるよう、OS も残す
+        self.assertIn(config.os_description(), text)
         self.assertNotIn("記録しました", text)
 
     def test_traceback_is_written(self):
