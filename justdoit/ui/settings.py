@@ -22,6 +22,7 @@ from justdoit.ui import theme
 from justdoit.ui.report_settings import TEXT_WIDTH, build_report_section, update_goal
 from justdoit.ui.theme import (
     C,
+    make_button,
     make_checkbox,
     make_label,
     make_link,
@@ -33,6 +34,8 @@ if TYPE_CHECKING:
     from justdoit.ui.app import JustDoItApp
 
 SETTINGS_SIZE = (460, 620)
+REPORT_PROBLEM_SIZE = (420, 400)
+REPORT_TEXT_WIDTH = 364  # 「不具合を報告する」画面の、折り返す文章の幅（画面の幅から余白を引いた幅）
 TABS = [("timer", "全般"), ("report", "週次レポート")]
 
 
@@ -75,32 +78,55 @@ def build_version(app: JustDoItApp, screen: tk.Frame) -> tk.Frame:
     row = tk.Frame(rows, bg=screen["bg"])
     row.pack(fill="x")
     make_label(row, f"バージョン {__version__}", size=9, color=C.muted).pack(side="left")
-    make_link(row, "不具合を報告する", lambda: report_problem(app)).pack(side="right")
+    make_link(row, "不具合を報告する", lambda: show_report_problem(app)).pack(side="right")
     return rows
 
 
-def report_problem(app: JustDoItApp) -> None:
-    """原因を調べるための情報をクリップボードにコピーし、報告の送り先を案内する
+def show_report_problem(app: JustDoItApp) -> None:
+    """「不具合を報告する」画面。原因を調べるための情報をクリップボードにコピーし、報告の送り先を案内する
 
-    情報をコピーするだけでは、このアプリしか知らない人には送り先がわからないため、
-    GitHub の報告フォームを開くか、アカウントが無ければメールで送るよう案内する。
+    情報をコピーするだけでは、このアプリしか知らない人には送り先がわからないため、送り先まで示す。
+    確認ダイアログにしないのは、閉じるとメールアドレスが見えなくなり、メールを書きながら確かめられないため。
     """
+    screen = app.make_screen(REPORT_PROBLEM_SIZE)
+    app.make_header(screen, "不具合を報告する", back=lambda: show_settings(app))
+    copy_support_info(app)
+
+    make_label(screen, "原因を調べるための情報をコピーしました", size=12, bold=True).pack(anchor="w")
+    make_label(
+        screen,
+        "バージョン・OS・最近のエラーなど\n（作業内容とメールアドレスは入っていません）",
+        size=10,
+        color=C.muted,
+        wraplength=app.px(REPORT_TEXT_WIDTH),
+        justify="left",
+    ).pack(anchor="w", pady=(4, 18))
+
+    make_label(screen, "起きたことと一緒に貼り付けて、送ってください。", size=11).pack(anchor="w", pady=(0, 12))
+    make_button(screen, "GitHub の報告フォームを開く", lambda: webbrowser.open(support.BUG_REPORT_URL)).pack(fill="x")
+    make_label(
+        screen,
+        "GitHub のアカウントが無い場合は、次のアドレスへメールで送ってください。",
+        size=10,
+        color=C.muted,
+        wraplength=app.px(REPORT_TEXT_WIDTH),
+        justify="left",
+    ).pack(anchor="w", pady=(18, 4))
+    make_label(screen, support.CONTACT_EMAIL, size=12).pack(anchor="w")
+
+    # メールを書いている間に、ほかのものをコピーして消してしまったとき用
+    def copy_again() -> None:
+        copy_support_info(app)
+        again.config(text="コピーしました")
+
+    again = make_link(screen, "情報をもう一度コピーする", copy_again)
+    again.pack(side="bottom")
+
+
+def copy_support_info(app: JustDoItApp) -> None:
     last_sync = app.last_sync[0] if app.last_sync else None
     app.root.clipboard_clear()
     app.root.clipboard_append(support.support_info(last_sync))
-    if messagebox.askyesno(
-        "不具合を報告する",
-        # ボタンの文字は OS の言語で「はい / Yes」などと変わるので、文中ではボタンの名前を使わない
-        "原因を調べるための情報（バージョン・OS・最近のエラーなど）をコピーしました。"
-        "作業内容とメールアドレスは入っていません。\n\n"
-        "起きたことと、コピーした情報を貼り付けて、次のどちらかで送ってください。\n"
-        "・GitHub の報告フォーム\n"
-        # アドレスは途中で折り返されないよう、1行にする
-        f"・メール（GitHub のアカウントが無い場合）\n{support.CONTACT_EMAIL}\n\n"
-        "GitHub の報告フォームを開きますか？",
-        parent=app.root,
-    ):
-        webbrowser.open(support.BUG_REPORT_URL)
 
 
 def build_data_folder(app: JustDoItApp, screen: tk.Frame) -> tk.Frame:
