@@ -7,11 +7,13 @@ from __future__ import annotations
 
 from dataclasses import replace
 from functools import partial
+import math
 import os
 from pathlib import Path
 import subprocess
 import sys
 import tkinter as tk
+from tkinter import font as tkfont
 from tkinter import messagebox
 from typing import TYPE_CHECKING
 import webbrowser
@@ -28,6 +30,7 @@ from justdoit.ui.theme import (
     make_link,
     make_select,
     make_tabs,
+    ui_font,
 )
 
 if TYPE_CHECKING:
@@ -112,15 +115,57 @@ def show_report_problem(app: JustDoItApp) -> None:
         wraplength=app.px(REPORT_TEXT_WIDTH),
         justify="left",
     ).pack(anchor="w", pady=(18, 4))
-    make_label(screen, support.CONTACT_EMAIL, size=12).pack(anchor="w")
+    address_row = tk.Frame(screen, bg=screen["bg"])
+    address_row.pack(fill="x")
+    # 入力欄は文字の左に少し余白があるので、そのぶん右に寄せて、ほかの文字と左端をそろえる
+    make_selectable_text(address_row, support.CONTACT_EMAIL).pack(side="left", padx=(app.px(2), 0))
+    note = make_label(screen, size=10, color=C.muted, wraplength=app.px(REPORT_TEXT_WIDTH), justify="left")
+    note.pack(anchor="w", pady=(6, 0))
 
-    # メールを書いている間に、ほかのものをコピーして消してしまったとき用
+    # クリップボードには1つしか入らないので、アドレスをコピーすると情報は消える。
+    # 宛先に貼ったあと、本文に貼る情報をコピーし直せるよう案内する
+    def copy_address() -> None:
+        app.root.clipboard_clear()
+        app.root.clipboard_append(support.CONTACT_EMAIL)
+        copy_link.config(text="コピーしました")
+        again.config(text="情報をもう一度コピーする")
+        note.config(text="宛先に貼り付けたら、下の「情報をもう一度コピーする」を押して、\n本文に貼り付けてください。")
+
+    copy_link = make_link(address_row, "コピー", copy_address)
+    copy_link.pack(side="left", padx=(app.px(12), 0))
+
+    # アドレスをコピーしたあとや、メールを書いている間にほかのものをコピーして消してしまったとき用
     def copy_again() -> None:
         copy_support_info(app)
         again.config(text="コピーしました")
+        copy_link.config(text="コピー")
+        note.config(text="")
 
     again = make_link(screen, "情報をもう一度コピーする", copy_again)
     again.pack(side="bottom")
+
+
+def make_selectable_text(parent: tk.Widget, text: str) -> tk.Entry:
+    """選択してコピーできる文字（見た目はほかの文字と同じ。Label は選択できないため、書き換えられない入力欄で出す）"""
+    font = tkfont.Font(font=ui_font(12))
+    # 入力欄の幅は「0」の幅の何個分かで決まるので、文字の幅から計算する（広すぎると、横の「コピー」が離れる）
+    width = math.ceil(font.measure(text) / font.measure("0")) + 1
+    entry = tk.Entry(
+        parent,
+        font=font,
+        relief="flat",
+        bd=0,
+        highlightthickness=0,
+        readonlybackground=parent["bg"],
+        fg=C.text,
+        selectbackground=C.accent,
+        selectforeground=C.on_accent,
+        insertbackground=C.text,
+        width=width,
+    )
+    entry.insert(0, text)
+    entry.config(state="readonly")
+    return entry
 
 
 def copy_support_info(app: JustDoItApp) -> None:
