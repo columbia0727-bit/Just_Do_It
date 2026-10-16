@@ -186,7 +186,25 @@ class JustDoItApp:
         self.resize_window(*size)
         screen = tk.Frame(self.root, bg=C.bg, padx=self.px(24), pady=self.px(20))
         screen.pack(fill="both", expand=True)
+        # 画面を作り終えたら、中身が収まっているか確かめる（after_idle にしないのは、画面を作る途中で
+        # update_idletasks() を呼ぶ部品（候補のボタンを折り返して並べる make_chips）があり、作りかけで動いてしまうため）
+        self.root.after(0, lambda: self.fit_to_content(screen))
         return screen
+
+    def fit_to_content(self, screen: tk.Frame) -> None:
+        """中身がウィンドウに収まらないときは、収まる大きさまでウィンドウを広げる
+
+        画面の大きさは画面ごとに決めているが、文字や部品の大きさは OS・フォント・Tk の版で変わる
+        （Tk 9 では入力欄やチェックボックスが大きく、ボタンが潰れたり、下の文字が隠れたりした）。
+        """
+        if not screen.winfo_exists() or not self.window_size:
+            return
+        # 作り終えた中身の大きさを計算させる（ここで描いても、作りかけの画面が見えることはない）
+        self.root.update_idletasks()
+        width, height = self.window_size
+        needed = (max(width, screen.winfo_reqwidth()), max(height, screen.winfo_reqheight()))
+        if needed != (width, height):
+            self.set_window_size(*needed)
 
     def make_header(
         self, screen: tk.Frame, title: str, back: Callable[[], None] | None = None
@@ -215,7 +233,10 @@ class JustDoItApp:
 
         起動直後はPC画面の中央に置く。はみ出す場合はPC画面内に収まるよう位置を寄せる。
         """
-        width, height = self.px(width), self.px(height)
+        self.set_window_size(self.px(width), self.px(height))
+
+    def set_window_size(self, width: int, height: int) -> None:
+        """resize_window の本体（大きさはピクセルで渡す）"""
         # 同じ大きさなら何もしない（設定のタブの切り替えなど。余計な描き直しで画面がちらつかないように）
         if self.window_size == (width, height):
             return

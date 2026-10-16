@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 
 FOCUS_SHORT_SECONDS = focus.FOCUS_SHORT_SECONDS
 TIMER_SIZE = (320, 420)
-RECORD_FORM_SIZE = (320, 400)
+RECORD_FORM_SIZE = (320, 420)  # 「このまま続ける」のボタンが増えても収まる高さ
 MANUAL_RECORD_SIZE = (380, 440)
 CONTENT_WIDTH = 272  # 画面の幅から左右の余白を引いた幅
 RING_SIZE = 210
@@ -198,7 +198,7 @@ def show_record_form(
     make_label(screen, "おつかれさまでした", size=16, bold=True).pack(pady=(16, 0))
     make_label(screen, f"{duration_mins}分", size=11, color=C.muted).pack()
     if note:
-        make_label(screen, note, size=10, color=C.muted, wraplength=app.px(CONTENT_WIDTH)).pack()
+        make_label(screen, note, size=10, color=C.muted, wraplength=app.px(CONTENT_WIDTH - 8)).pack()
 
     make_label(screen, "何をやった？", size=11).pack(anchor="w", pady=(20, 4))
     task_entry = make_task_input(app, screen)

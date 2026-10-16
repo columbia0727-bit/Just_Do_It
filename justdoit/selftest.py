@@ -136,10 +136,13 @@ def _run_screens(lines: list[str]) -> bool:
             try:
                 show()
                 root.update()
+                _check_fits(root, f"[{appearance}] {name}", errors)
             except Exception:
                 errors.append(traceback.format_exc())
             ok = len(errors) == before
-            lines.append(f"[{appearance}] {name}: {'OK' if ok else 'ERROR'}")
+            # ウィンドウの大きさも残す（中身に合わせて広げた画面は、決めた大きさより大きくなる）
+            size = f"{root.winfo_width()}x{root.winfo_height()}"
+            lines.append(f"[{appearance}] {name}: {'OK' if ok else 'ERROR'} ({size})")
 
     # グラフは matplotlib のフォントなどが同梱されていないと描けないので、描けたかも確かめる
     dashboard.show_dashboard(app, "week")
@@ -154,6 +157,20 @@ def _run_screens(lines: list[str]) -> bool:
     root.destroy()
     lines.extend(errors)
     return bool(errors)
+
+
+def _check_fits(root: tk.Tk, name: str, errors: list[str]) -> None:
+    """画面の中身がウィンドウに収まっているか（収まらないと、下の文字が隠れたり、ボタンが潰れたりする）
+
+    文字や部品の大きさは OS・フォント・Tk の版で変わるので、配布版そのもので確かめる。
+    """
+    screen = root.winfo_children()[0]
+    needed_width, needed_height = screen.winfo_reqwidth(), screen.winfo_reqheight()
+    width, height = root.winfo_width(), root.winfo_height()
+    if needed_width > width or needed_height > height:
+        errors.append(
+            f"{name}: 中身（{needed_width}x{needed_height}）がウィンドウ（{width}x{height}）に収まっていません"
+        )
 
 
 def _find_widgets(widget: tk.Misc, widget_class: str) -> list[tk.Misc]:
