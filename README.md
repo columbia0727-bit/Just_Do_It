@@ -221,8 +221,10 @@ just-do-it/
 │   └── ui/                    # 画面（app・theme・datepicker・timer・history・dashboard・settings・report_settings）
 ├── gas/report_service/        # 週次レポート配信サービス（Google Apps Script）
 ├── tests/                     # 単体テスト
-├── tools/release_notes.py     # CHANGELOG.md からリリースノートを作る（リリース時に Actions が実行）
-├── docs/                      # README 用スクリーンショット（サンプルの記録で撮影）
+├── tools/
+│   ├── release_notes.py       # CHANGELOG.md からリリースノートを作る（リリース時に Actions が実行）
+│   └── readme_screenshots.py  # README 用スクリーンショットを、サンプルの記録で撮り直す
+├── docs/                      # README 用スクリーンショット（tools/readme_screenshots.py がサンプルの記録で撮る）
 ├── JustDoIt.spec              # ビルド設定
 ├── CLAUDE.md                  # Claude Code で開発するときの決まりごと
 └── .github/                   # GitHub Actions（workflows/）、不具合の報告フォーム（ISSUE_TEMPLATE/）
