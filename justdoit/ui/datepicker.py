@@ -68,7 +68,15 @@ class CalendarPopup(tk.Frame):
         self.picker = picker
         self.window = picker.winfo_toplevel()
         super().__init__(
-            self.window, bg=C.surface, padx=px(8), pady=px(8), highlightthickness=1, highlightbackground=C.border
+            self.window,
+            bg=C.surface,
+            padx=px(8),
+            pady=px(8),
+            highlightthickness=1,
+            highlightbackground=C.border,
+            # カレンダーは開くとキーボードで操作できるよう選ばれた状態になるので、そのときの枠の色も決めておく
+            # （決めないと Tk の初期値の黒になり、ライトモードで枠だけが黒く目立っていた）
+            highlightcolor=C.border,
         )
         self.cursor = picker.selected  # キーボードで選んでいる日
         self.month = (picker.selected.year, picker.selected.month)
