@@ -35,6 +35,9 @@ if TYPE_CHECKING:
     from justdoit.ui.app import JustDoItApp
 
 DASHBOARD_SIZE = (750, 560)  # 右の列（よくやったこと）を決まった幅にしても、グラフが狭くならない幅・高さ
+CHART_SIZE = (4.6, 3.4)  # グラフの大きさ（インチ。100% 表示で 1インチ = 100px）
+SIDE_GAP = 24  # グラフと右の列の間
+SCREEN_PADDING = 24  # 画面の左右の余白（app.make_screen と同じ）
 EMPTY_SIZE = (420, 340)
 TOP_TASKS = 5
 MAX_TASK_NAME_LENGTH = 10
@@ -76,7 +79,7 @@ def show_dashboard(app: JustDoItApp, period: str | None = None, offset: int | No
         show_empty(app)
         return
 
-    screen = app.make_screen(DASHBOARD_SIZE)
+    screen = app.make_screen(dashboard_size())
     header = app.make_header(screen, "振り返り")
     make_tabs(
         header,
@@ -96,7 +99,7 @@ def show_dashboard(app: JustDoItApp, period: str | None = None, offset: int | No
     body = tk.Frame(screen, bg=C.bg)
     body.pack(fill="both", expand=True)
     side = tk.Frame(body, bg=C.bg)
-    side.pack(side="right", fill="y", padx=(24, 0))
+    side.pack(side="right", fill="y", padx=(SIDE_GAP, 0))
     # 右の列は、中身（作業内容の名前の長さ・件数）によらず同じ幅にする
     # （中身に合わせると、期間を切り替えるたびにグラフの幅とリンクの位置が左右に動くため）
     tk.Frame(side, bg=C.bg, width=app.px(side_width()), height=0).pack()
@@ -243,6 +246,17 @@ def format_date(day: date) -> str:
     return f"{day.year}/{day.month}/{day.day}"
 
 
+def dashboard_size() -> tuple[int, int]:
+    """振り返りの画面の大きさ（週・月・年・通算で同じにする）
+
+    右の列の幅は OS のフォントで変わり、Windows では DASHBOARD_SIZE の幅に収まらない。
+    週・月・年だけ中身に合わせて広がると、通算に切り替えたときにウィンドウの幅が変わるので、
+    グラフと右の列が入る幅を先に計算して、どのタブもその幅にする。
+    """
+    needed = round(CHART_SIZE[0] * 100) + SIDE_GAP + side_width() + SCREEN_PADDING * 2
+    return max(DASHBOARD_SIZE[0], needed), DASHBOARD_SIZE[1]
+
+
 def side_width() -> int:
     """右の列の幅（いちばん長い作業内容の名前と時間・リンク・「記録はありません」が入る幅）
 
@@ -282,7 +296,7 @@ def build_chart(app: JustDoItApp, parent: tk.Frame, summary: PeriodSummary) -> t
     per = "月ごと" if app.dashboard_period == "year" else "日ごと"
     make_label(chart, f"{per}の作業時間（{summary.unit}）", size=10, color=C.muted).pack(anchor="w")
 
-    fig = Figure(figsize=(4.6, 3.4), dpi=100 * app.scale, facecolor=C.bg)
+    fig = Figure(figsize=CHART_SIZE, dpi=100 * app.scale, facecolor=C.bg)
     ax = fig.add_subplot()
     ax.set_facecolor(C.bg)
     values = summary.values
