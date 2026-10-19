@@ -25,7 +25,7 @@
 
 ### 開発
 - GitHub Actions で、Windows・macOS の全画面のスクリーンショットを撮って保存する（手元に Windows の PC が無くても、Windows での見た目を確かめられる）。`--self-test` でも、各画面の中身がウィンドウに収まっているかを確かめる
-- README のスクリーンショットを、サンプルの記録で撮り直すスクリプト（`tools/readme_screenshots.py`）を作り、今の画面で撮り直した
+- README のスクリーンショットを、サンプルの記録で撮り直すスクリプト（`tools/readme_screenshots.py`）を作り、今の画面で撮り直した。README の冒頭に、アプリを自動で操作して作るデモ（`tools/readme_demo.py`）を載せた
 - GitHub の Issue に「不具合の報告」フォームを用意した
 - デバッグ用の `print()` を `logging` にまとめ、警告・エラーを `error.log` に残すようにした。タイマーの判断を画面から切り出して、単体テストを足した
 - README に、Claude Code との分担と、問い合わせに対応しやすくするための工夫を書いた
