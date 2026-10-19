@@ -18,11 +18,13 @@ from justdoit.records import (
     list_records,
     rename_records,
     same_task_records,
+    task_counts,
     update_record,
     validate_record,
     validate_when,
 )
 from justdoit.ui import confirm
+from justdoit.ui.suggest import TaskSuggestions
 from justdoit.ui.theme import C, make_button, make_entry, make_label, make_select, ui_font
 
 if TYPE_CHECKING:
@@ -60,6 +62,8 @@ def show_history(app: JustDoItApp, back: Callable[[], None]) -> None:
             screen, "※ 直した内容は、週次レポートの記録にも反映されます。", size=9, color=C.muted
         ).pack(side="bottom", anchor="w")
     form = RecordForm(app, screen, csv_path, on_changed=lambda: show_history(app, back))
+    # 名前を直すときも、前に使った名前を候補に出す（ほかの記録の名前にそろえやすいように）
+    TaskSuggestions(form.task_entry, task_counts(record.task for _, items in months for record in items))
 
     def choose_month(new_index: int) -> None:
         app.history_month = month_keys[new_index]

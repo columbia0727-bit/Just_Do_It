@@ -4,6 +4,8 @@ CSV は1行1記録で [日時, 作業内容, 実施時間] （例: 2026-10-14 09
 """
 
 import calendar
+from collections import Counter
+from collections.abc import Iterable
 import csv
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -252,6 +254,23 @@ def recent_tasks(records: pd.DataFrame, limit: int = 5) -> list[str]:
     """最近やった作業内容を、新しい順に重複なしで返す（記録画面の候補に使う）"""
     tasks = records.sort_values("日時", ascending=False)["作業内容"]
     return [task for task in tasks.drop_duplicates() if task][:limit]
+
+
+def task_counts(tasks: Iterable[str]) -> list[tuple[str, int]]:
+    """作業内容ごとの記録した回数（多い順。入力欄の候補に使う）"""
+    counts = Counter(task.strip() for task in tasks if task.strip())
+    return sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+
+
+def suggest_tasks(counts: list[tuple[str, int]], text: str, limit: int = 4) -> list[tuple[str, int]]:
+    """入力中の文字を含む、前に使った作業内容（記録した回数の多い順）
+
+    打った名前とまったく同じ名前は出さない（選んでも変わらないため）。英字の大文字・小文字は区別しない。
+    """
+    text = text.strip().casefold()
+    if not text:
+        return []
+    return [(task, n) for task, n in counts if text in task.casefold() and text != task.casefold()][:limit]
 
 
 def today_minutes(records: pd.DataFrame, today: datetime | None = None) -> int:

@@ -274,6 +274,18 @@ class DailySummaryTest(unittest.TestCase):
             records.append_record_to_csv(self.csv_path, datetime_str, task, minutes)
         return records.load_records(self.csv_path)
 
+    def test_task_counts_and_suggestions(self):
+        counts = records.task_counts(["英語の勉強", "英語", "英語の勉強", "読書", " 英語の勉強 ", "", "English"])
+        self.assertEqual(counts, [("英語の勉強", 3), ("English", 1), ("英語", 1), ("読書", 1)])
+
+        self.assertEqual(records.suggest_tasks(counts, "英"), [("英語の勉強", 3), ("英語", 1)])
+        # 打った名前と同じ名前は出さない。それを含むほかの名前は出す
+        self.assertEqual(records.suggest_tasks(counts, "英語"), [("英語の勉強", 3)])
+        self.assertEqual(records.suggest_tasks(counts, "english"), [])  # 大文字・小文字だけの違いは同じ名前
+        self.assertEqual(records.suggest_tasks(counts, "eng"), [("English", 1)])
+        self.assertEqual(records.suggest_tasks(counts, "  "), [])
+        self.assertEqual(records.suggest_tasks(counts, "語", limit=1), [("英語の勉強", 3)])
+
     def test_recent_tasks_are_unique_and_newest_first(self):
         loaded = self.load(
             [

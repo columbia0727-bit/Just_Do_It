@@ -10,9 +10,18 @@ from typing import TYPE_CHECKING
 from PIL import ImageTk
 
 from justdoit import config, focus
-from justdoit.records import RECENT_DAYS, load_records, recent_tasks, recorded_at_on, validate_record
+from justdoit.records import (
+    RECENT_DAYS,
+    empty_records,
+    load_records,
+    recent_tasks,
+    recorded_at_on,
+    task_counts,
+    validate_record,
+)
 from justdoit.ui import confirm
 from justdoit.ui.datepicker import DatePicker
+from justdoit.ui.suggest import TaskSuggestions
 from justdoit.ui.theme import (
     C,
     make_back_button,
@@ -270,15 +279,20 @@ def show_unsaved_record(app: JustDoItApp, unsaved: focus.UnsavedTimer) -> None:
 
 
 def make_task_input(app: JustDoItApp, screen: tk.Frame, content_width: int = CONTENT_WIDTH) -> tk.Entry:
-    """作業内容の入力欄と、その下の「最近やったこと」の候補（押すと入力欄に入る）"""
+    """作業内容の入力欄と、その下の「最近やったこと」の候補（押すと入力欄に入る）
+
+    打ち始めると、前に使った名前のうち、打った文字を含むものも候補に出す（名前のばらつきを防ぐため）。
+    """
     task_entry = make_entry(screen)
     task_entry.pack(fill="x", ipady=4)
     task_entry.focus_set()
 
     try:
-        tasks = recent_tasks(load_records(config.get_csv_path()))
+        records = load_records(config.get_csv_path())
     except (OSError, ValueError):
-        tasks = []
+        records = empty_records()
+    TaskSuggestions(task_entry, task_counts(records["作業内容"]))
+    tasks = recent_tasks(records)
     if tasks:
 
         def fill(task: str):
