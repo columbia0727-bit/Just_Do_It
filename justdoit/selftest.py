@@ -140,6 +140,7 @@ def _run_screens(lines: list[str], screenshot_dir: Path | None = None) -> bool:
         ("振り返り（週）", lambda: dashboard.show_dashboard(app, "week")),
         ("振り返り（月）", lambda: dashboard.show_dashboard(app, "month")),
         ("振り返り（年）", lambda: dashboard.show_dashboard(app, "year")),
+        ("振り返り（通算）", lambda: dashboard.show_dashboard(app, "total")),
         ("記録一覧", lambda: history.show_history(app, back=app.show_main_menu)),
         ("設定（全般）", lambda: settings.show_settings(app, "timer")),
         ("設定（週次レポート）", lambda: settings.show_settings(app, "report")),

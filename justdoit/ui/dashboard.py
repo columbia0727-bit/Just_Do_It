@@ -1,7 +1,8 @@
-"""振り返り画面（期間ごとの合計時間・グラフ・よくやったこと、記録一覧への入口）"""
+"""振り返り画面（期間ごとの合計時間・グラフ・よくやったこと、作業内容ごとの通算、記録一覧への入口）"""
 
 from __future__ import annotations
 
+from datetime import date
 from functools import partial
 import sys
 import tkinter as tk
@@ -17,8 +18,11 @@ from justdoit import config
 from justdoit.records import (
     PERIODS,
     PeriodSummary,
+    TaskTotal,
+    compare_with_previous,
     format_hours_mins,
     load_records,
+    summarize_all_time,
     summarize_by_task,
     summarize_period,
 )
@@ -30,7 +34,10 @@ if TYPE_CHECKING:
 
     from justdoit.ui.app import JustDoItApp
 
-DASHBOARD_SIZE = (740, 540)  # 右の列（よくやったこと）を決まった幅にしても、グラフが狭くならない幅
+DASHBOARD_SIZE = (750, 560)  # 右の列（よくやったこと）を決まった幅にしても、グラフが狭くならない幅・高さ
+CHART_SIZE = (4.6, 3.4)  # グラフの大きさ（インチ。100% 表示で 1インチ = 100px）
+SIDE_GAP = 24  # グラフと右の列の間
+SCREEN_PADDING = 24  # 画面の左右の余白（app.make_screen と同じ）
 EMPTY_SIZE = (420, 340)
 TOP_TASKS = 5
 MAX_TASK_NAME_LENGTH = 10
@@ -39,6 +46,11 @@ NO_TASKS_TEXT = "この期間の記録はありません"
 TASK_TIME_GAP = 16  # よくやったことの、名前と時間の間
 # グラフの横軸の目盛りを何本おきに出すか（月は30本あるので間引く）
 TICK_STEP = {"week": 1, "month": 5, "year": 1}
+TOTAL = "total"  # 期間の切り替えの「通算」（週・月・年と違い、前後に動かす期間はない）
+TOTAL_ROWS = 8  # 通算の一覧に出す作業内容の数（それより後は「ほか ○件」にまとめる）
+MAX_TOTAL_NAME_LENGTH = 12
+TOTAL_BAR_WIDTH = 180
+TOTAL_GAP = 16  # 通算の一覧の、列と列の間
 
 # グラフの日本語フォント（OSごとに、入っているものを先頭から使う）
 rcParams["font.sans-serif"] = {
@@ -49,7 +61,7 @@ rcParams["axes.unicode_minus"] = False
 
 
 def show_dashboard(app: JustDoItApp, period: str | None = None, offset: int | None = None) -> None:
-    """ローカルのCSVを読み込んで、選んだ期間（週・月・年）の振り返りを表示する
+    """ローカルのCSVを読み込んで、選んだ期間（週・月・年・通算）の振り返りを表示する
 
     offset は何期間前を表示するか（0 が直近。「‹ 前へ」「次へ ›」や ← → キーで動かす）。
     """
@@ -67,37 +79,47 @@ def show_dashboard(app: JustDoItApp, period: str | None = None, offset: int | No
         show_empty(app)
         return
 
-    summary = summarize_period(records, app.dashboard_period, offset=app.dashboard_offset)
-
-    screen = app.make_screen(DASHBOARD_SIZE)
+    screen = app.make_screen(dashboard_size())
     header = app.make_header(screen, "振り返り")
     make_tabs(
         header,
-        [(key, p.tab_label) for key, p in PERIODS.items()],
+        [(key, p.tab_label) for key, p in PERIODS.items()] + [(TOTAL, "通算")],
         app.dashboard_period,
         lambda key: show_dashboard(app, key),
     ).pack(side="left", padx=(app.px(20), 0))
+    if app.dashboard_period == TOTAL:
+        build_totals(app, screen, records)
+        return
+
+    summary = summarize_period(records, app.dashboard_period, offset=app.dashboard_offset)
     build_period_nav(app, header, records, summary)
 
-    build_stats(screen, summary, records)
+    build_stats(app, screen, summary, records)
 
     body = tk.Frame(screen, bg=C.bg)
     body.pack(fill="both", expand=True)
     side = tk.Frame(body, bg=C.bg)
-    side.pack(side="right", fill="y", padx=(24, 0))
+    side.pack(side="right", fill="y", padx=(SIDE_GAP, 0))
     # 右の列は、中身（作業内容の名前の長さ・件数）によらず同じ幅にする
     # （中身に合わせると、期間を切り替えるたびにグラフの幅とリンクの位置が左右に動くため）
     tk.Frame(side, bg=C.bg, width=app.px(side_width()), height=0).pack()
     build_top_tasks(side, summary).pack(fill="x")
 
-    # 記録の修正・削除は、振り返りの中から開く（メニューをシンプルに保つため）。
-    # 灰色の文字で右下の端に置いていたときは気づきにくかったので、「よくやったこと」のすぐ下に、
-    # アクセント色と「›」で置く（ボタンにはせず、画面の静かさは保つ）
+    make_history_link(app, side)
+    build_chart(app, body, summary).pack(side="left", fill="both", expand=True)
+
+
+def make_history_link(app: JustDoItApp, parent: tk.Frame) -> None:
+    """記録一覧への入口（記録の修正・削除は、振り返りの中から開く。メニューをシンプルに保つため）
+
+    灰色の文字で右下の端に置いていたときは気づきにくかったので、一覧のすぐ下に、
+    アクセント色と「›」で置く（ボタンにはせず、画面の静かさは保つ）
+    """
+
     def open_history():
         history.show_history(app, back=lambda: show_dashboard(app))
 
-    make_link(side, HISTORY_LINK_TEXT, open_history, accent=True).pack(anchor="w", pady=(14, 0))
-    build_chart(app, body, summary).pack(side="left", fill="both", expand=True)
+    make_link(parent, HISTORY_LINK_TEXT, open_history, accent=True).pack(anchor="w", pady=(14, 0))
 
 
 def build_period_nav(app: JustDoItApp, header: tk.Frame, records: pd.DataFrame, summary: PeriodSummary) -> None:
@@ -135,19 +157,104 @@ def show_empty(app: JustDoItApp) -> None:
     ).pack(side="bottom", fill="x")
 
 
-def build_stats(screen: tk.Frame, summary: PeriodSummary, records: pd.DataFrame) -> None:
-    """合計時間（この期間・記録した日・累計）"""
+def build_stats(app: JustDoItApp, screen: tk.Frame, summary: PeriodSummary, records: pd.DataFrame) -> None:
+    """合計時間（この期間と、前の期間と比べた一言・記録した日・累計）"""
+    comparison = compare_with_previous(records, app.dashboard_period, offset=app.dashboard_offset)
+    note = (comparison.text, C.accent if comparison.increased else C.muted) if comparison else None
+    make_stat_row(
+        screen,
+        [
+            (summary.title, format_hours_mins(summary.total_minutes), note),
+            ("記録した日", f"{summary.active_days} / {summary.span_days}日", None),
+            (f"累計（{len(records)}回）", format_hours_mins(int(records["分"].sum())), None),
+        ],
+    )
+
+
+def make_stat_row(screen: tk.Frame, cells: list[tuple[str, str, tuple[str, str] | None]]) -> None:
+    """上に並べる大きな数字（見出し・数字・その下の小さな補足（文字, 色））"""
     stats = tk.Frame(screen, bg=C.bg)
     stats.pack(fill="x", pady=(0, 16))
-    for label, value in [
-        (summary.title, format_hours_mins(summary.total_minutes)),
-        ("記録した日", f"{summary.active_days} / {summary.span_days}日"),
-        (f"累計（{len(records)}回）", format_hours_mins(int(records["分"].sum()))),
-    ]:
+    for label, value, note in cells:
         cell = tk.Frame(stats, bg=C.bg)
-        cell.pack(side="left", expand=True, fill="x")
+        # 補足がある欄だけ高くなるので、見出しの高さを上でそろえる
+        cell.pack(side="left", expand=True, fill="x", anchor="n")
         make_label(cell, label, size=10, color=C.muted).pack(anchor="w")
         make_label(cell, value, size=18, bold=True).pack(anchor="w")
+        if note:
+            text, color = note
+            make_label(cell, text, size=10, color=color).pack(anchor="w")
+
+
+def build_totals(app: JustDoItApp, screen: tk.Frame, records: pd.DataFrame) -> None:
+    """通算（全期間の合計と、作業内容ごとの通算の一覧）"""
+    done = records[records["分"] > 0]
+    first_day = done["日時"].min().date()
+    days_since = (date.today() - first_day).days + 1
+    make_stat_row(
+        screen,
+        [
+            (f"通算（{len(done)}回）", format_hours_mins(int(done["分"].sum())), None),
+            ("記録した日", f"{done['日時'].dt.date.nunique()}日", None),
+            ("最初の記録", format_date(first_day), (f"今日で {days_since}日目", C.muted)),
+        ],
+    )
+    totals = summarize_all_time(records)
+    build_total_table(app, screen, totals[:TOTAL_ROWS])
+    rest = totals[TOTAL_ROWS:]
+    if rest:
+        note = f"ほか {len(rest)}件 ・ {format_hours_mins(sum(t.minutes for t in rest))}"
+        make_label(screen, note, size=10, color=C.muted).pack(anchor="w", pady=(6, 0))
+    make_history_link(app, screen)
+
+
+def build_total_table(app: JustDoItApp, parent: tk.Frame, totals: list[TaskTotal]) -> None:
+    """作業内容ごとの通算の一覧（名前・帯・時間・回数・最初の記録）"""
+    table = tk.Frame(parent, bg=C.bg)
+    table.pack(fill="x")
+    table.columnconfigure(1, weight=1)  # 帯の右の空きを広げ、数字を右端にそろえる
+    # 名前の列は、いちばん長い名前が入る幅に決めておく（名前の長さで帯の始まりが左右にずれないように）
+    table.columnconfigure(0, minsize=app.px(text_width(["国" * (MAX_TOTAL_NAME_LENGTH - 1) + "…"], 11)))
+    for column, text in enumerate(["作業内容", "", "通算", "回数", "最初の記録"]):
+        make_label(table, text, size=10, color=C.muted).grid(
+            row=0, column=column, sticky="w" if column < 2 else "e", padx=(0 if column == 0 else TOTAL_GAP, 0),
+            pady=(0, 6),
+        )
+    most = totals[0].minutes
+    bar_width, bar_height = app.px(TOTAL_BAR_WIDTH), app.px(10)
+    for row, total in enumerate(totals, start=1):
+        name = total.task
+        if len(name) > MAX_TOTAL_NAME_LENGTH:
+            name = name[: MAX_TOTAL_NAME_LENGTH - 1] + "…"
+        make_label(table, name, size=11).grid(row=row, column=0, sticky="w", pady=4)
+        bar = tk.Canvas(table, width=bar_width, height=bar_height, bg=C.bg, highlightthickness=0)
+        bar.grid(row=row, column=1, sticky="w", padx=(TOTAL_GAP, 0))
+        bar.create_rectangle(0, 0, max(2, bar_width * total.minutes / most), bar_height, fill=C.accent, width=0)
+        for column, (text, color) in enumerate(
+            [
+                (format_hours_mins(total.minutes), C.text),
+                (f"{total.count}回", C.muted),
+                (format_date(total.first_day), C.muted),
+            ],
+            start=2,
+        ):
+            make_label(table, text, size=11, color=color).grid(row=row, column=column, sticky="e", padx=(TOTAL_GAP, 0))
+
+
+def format_date(day: date) -> str:
+    """「2025/8/19」"""
+    return f"{day.year}/{day.month}/{day.day}"
+
+
+def dashboard_size() -> tuple[int, int]:
+    """振り返りの画面の大きさ（週・月・年・通算で同じにする）
+
+    右の列の幅は OS のフォントで変わり、Windows では DASHBOARD_SIZE の幅に収まらない。
+    週・月・年だけ中身に合わせて広がると、通算に切り替えたときにウィンドウの幅が変わるので、
+    グラフと右の列が入る幅を先に計算して、どのタブもその幅にする。
+    """
+    needed = round(CHART_SIZE[0] * 100) + SIDE_GAP + side_width() + SCREEN_PADDING * 2
+    return max(DASHBOARD_SIZE[0], needed), DASHBOARD_SIZE[1]
 
 
 def side_width() -> int:
@@ -189,7 +296,7 @@ def build_chart(app: JustDoItApp, parent: tk.Frame, summary: PeriodSummary) -> t
     per = "月ごと" if app.dashboard_period == "year" else "日ごと"
     make_label(chart, f"{per}の作業時間（{summary.unit}）", size=10, color=C.muted).pack(anchor="w")
 
-    fig = Figure(figsize=(4.6, 3.4), dpi=100 * app.scale, facecolor=C.bg)
+    fig = Figure(figsize=CHART_SIZE, dpi=100 * app.scale, facecolor=C.bg)
     ax = fig.add_subplot()
     ax.set_facecolor(C.bg)
     values = summary.values

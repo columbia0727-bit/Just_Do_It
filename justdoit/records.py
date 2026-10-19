@@ -4,6 +4,8 @@ CSV は1行1記録で [日時, 作業内容, 実施時間] （例: 2026-10-14 09
 """
 
 import calendar
+from collections import Counter
+from collections.abc import Iterable
 import csv
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -208,6 +210,19 @@ def update_record(
     write_rows(csv_path, rows)
 
 
+def same_task_records(csv_path: Path, task: str, exclude_row: int | None = None) -> list[Record]:
+    """作業内容が task と同じ記録（exclude_row の記録は除く。名前をまとめて変えるときに使う）"""
+    return [r for r in list_records(csv_path) if r.task == task and r.row_index != exclude_row]
+
+
+def rename_records(csv_path: Path, targets: list[Record], new_task: str) -> None:
+    """targets の記録の作業内容を、まとめて new_task に変える（1回で書き直す）"""
+    rows = read_rows(csv_path)
+    for record in targets:
+        rows[record.row_index][1] = new_task
+    write_rows(csv_path, rows)
+
+
 def delete_record(csv_path: Path, row_index: int) -> None:
     rows = read_rows(csv_path)
     del rows[row_index]
@@ -239,6 +254,23 @@ def recent_tasks(records: pd.DataFrame, limit: int = 5) -> list[str]:
     """最近やった作業内容を、新しい順に重複なしで返す（記録画面の候補に使う）"""
     tasks = records.sort_values("日時", ascending=False)["作業内容"]
     return [task for task in tasks.drop_duplicates() if task][:limit]
+
+
+def task_counts(tasks: Iterable[str]) -> list[tuple[str, int]]:
+    """作業内容ごとの記録した回数（多い順。入力欄の候補に使う）"""
+    counts = Counter(task.strip() for task in tasks if task.strip())
+    return sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+
+
+def suggest_tasks(counts: list[tuple[str, int]], text: str, limit: int = 4) -> list[tuple[str, int]]:
+    """入力中の文字を含む、前に使った作業内容（記録した回数の多い順）
+
+    打った名前とまったく同じ名前は出さない（選んでも変わらないため）。英字の大文字・小文字は区別しない。
+    """
+    text = text.strip().casefold()
+    if not text:
+        return []
+    return [(task, n) for task, n in counts if text in task.casefold() and text != task.casefold()][:limit]
 
 
 def today_minutes(records: pd.DataFrame, today: datetime | None = None) -> int:
@@ -335,6 +367,70 @@ def summarize_period(
         span_days=len(daily),
         by_task=summarize_by_task(in_range),
     )
+
+
+PREVIOUS_NAMES = {"week": "前の7日", "month": "前の30日", "year": "前の12か月"}
+
+
+class Comparison(NamedTuple):
+    """前の期間と比べた一言（振り返りの合計時間の下に出す）"""
+
+    text: str
+    increased: bool  # 増えたときだけアクセント色にする
+
+
+def compare_with_previous(
+    records: pd.DataFrame, period: str, today: datetime | None = None, offset: int = 0
+) -> Comparison | None:
+    """表示している期間を、その前の期間（「‹ 前へ」で出る期間）と比べる
+
+    減ったときは差（マイナス）ではなく前の期間の時間を出す（責めない言い方にするため）。
+    それより前に記録が無い・どちらも0分のときは None（比べても意味がないため）。
+    年の直近12か月は今月が途中なので、前の12か月も1年前の今日までで比べる
+    （そのまま比べると、月の初めはいつも減ったように見えるため）。
+    """
+    today = today or datetime.now()
+    current = summarize_period(records, period, today=today, offset=offset)
+    if records.empty or records["日時"].min().date() >= current.start:
+        return None
+    previous = summarize_period(records, period, today=today, offset=offset + 1)
+    if period == "year" and offset == 0:
+        same_day_last_year = (pd.Timestamp(today) - pd.DateOffset(years=1)).date()
+        previous_minutes = int(_records_between(records, previous.start, same_day_last_year)["分"].sum())
+        name = "1年前の同じ時期"
+    else:
+        previous_minutes = previous.total_minutes
+        name = ("その" if offset else "") + PREVIOUS_NAMES[period]
+
+    diff = current.total_minutes - previous_minutes
+    if current.total_minutes == 0 and previous_minutes == 0:
+        return None
+    if diff > 0:
+        return Comparison(f"{name}より +{format_hours_mins(diff)}", True)
+    if diff == 0:
+        return Comparison(f"{name}と同じ", False)
+    return Comparison(f"{name}は {format_hours_mins(previous_minutes)}", False)
+
+
+@dataclass
+class TaskTotal:
+    """作業内容ごとの通算（振り返りの「通算」に出す）"""
+
+    task: str
+    minutes: int
+    count: int  # 記録した回数
+    first_day: date  # 最初に記録した日
+
+
+def summarize_all_time(records: pd.DataFrame) -> list[TaskTotal]:
+    """作業内容ごとの全期間の合計（時間の多い順。0分の記録は数えない）"""
+    done = records[records["分"] > 0]
+    grouped = done.groupby("作業内容").agg(minutes=("分", "sum"), count=("分", "size"), first=("日時", "min"))
+    grouped = grouped.sort_values(["minutes", "first"], ascending=[False, True])
+    return [
+        TaskTotal(str(task), int(row["minutes"]), int(row["count"]), row["first"].date())
+        for task, row in grouped.iterrows()
+    ]
 
 
 def _records_between(records: pd.DataFrame, start: date, end: date) -> pd.DataFrame:

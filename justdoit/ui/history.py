@@ -16,11 +16,15 @@ from justdoit.records import (
     delete_record,
     group_by_month,
     list_records,
+    rename_records,
+    same_task_records,
+    task_counts,
     update_record,
     validate_record,
     validate_when,
 )
 from justdoit.ui import confirm
+from justdoit.ui.suggest import TaskSuggestions
 from justdoit.ui.theme import C, make_button, make_entry, make_label, make_select, ui_font
 
 if TYPE_CHECKING:
@@ -58,6 +62,8 @@ def show_history(app: JustDoItApp, back: Callable[[], None]) -> None:
             screen, "※ 直した内容は、週次レポートの記録にも反映されます。", size=9, color=C.muted
         ).pack(side="bottom", anchor="w")
     form = RecordForm(app, screen, csv_path, on_changed=lambda: show_history(app, back))
+    # 名前を直すときも、前に使った名前を候補に出す（ほかの記録の名前にそろえやすいように）
+    TaskSuggestions(form.task_entry, task_counts(record.task for _, items in months for record in items))
 
     def choose_month(new_index: int) -> None:
         app.history_month = month_keys[new_index]
@@ -185,10 +191,40 @@ class RecordForm:
             self.on_changed()  # 何も変わっていない
             return
         new_datetime = when.strftime(DATETIME_FORMAT)
-        self.apply(
-            lambda: update_record(self.csv_path, record.row_index, task, minutes, recorded_at=when),
-            report_service.make_update(report_log(record), task, minutes, new_datetime=new_datetime),
+        report_items = [report_service.make_update(report_log(record), task, minutes, new_datetime=new_datetime)]
+        others = self.ask_rename_others(record, task)
+
+        def change() -> None:
+            update_record(self.csv_path, record.row_index, task, minutes, recorded_at=when)
+            if others:
+                rename_records(self.csv_path, others, task)
+
+        report_items += [report_service.make_update(report_log(other), task, other.minutes) for other in others]
+        self.apply(change, report_items)
+
+    def ask_rename_others(self, record: Record, new_task: str) -> list[Record]:
+        """作業内容を変えたとき、同じ名前の記録がほかにもあれば、まとめて変えるか聞く。まとめて変える記録を返す
+
+        作業内容は自由入力なので「英語」「英語の勉強」のように名前がばらつき、振り返りの通算で別々に並ぶ。
+        1件ずつ直さなくても、まとめてそろえられるようにする。まとめて変えると元に戻すのが大変なので、
+        「この1件だけ」の方を目立たせ、Enter・Esc でもそちらを選ぶ。
+        """
+        if new_task == record.task:
+            return []
+        others = same_task_records(self.csv_path, record.task, exclude_row=record.row_index)
+        if not others:
+            return []
+        rename_all = confirm.ask(
+            self.app,
+            f"ほかの「{record.task}」も変えますか？",
+            f"「{record.task}」の記録が、ほかに {len(others)}件あります。\n"
+            "まとめて変えると、振り返りの通算でも1つにまとまります。",
+            [
+                confirm.Choice(f"{len(others) + 1}件まとめて変える", True),
+                confirm.Choice("この1件だけ変える", False, safe=True),
+            ],
         )
+        return others if rename_all else []
 
     def delete(self) -> None:
         if self.record is None:
@@ -204,10 +240,10 @@ class RecordForm:
         ):
             self.apply(
                 lambda: delete_record(self.csv_path, record.row_index),
-                report_service.make_delete(report_log(record)),
+                [report_service.make_delete(report_log(record))],
             )
 
-    def apply(self, change: Callable[[], None], report_item: dict) -> None:
+    def apply(self, change: Callable[[], None], report_items: list[dict]) -> None:
         """CSV を書き換えて一覧を表示し直す（Excel で開いているなどで書き込めなければ知らせる）
 
         週次レポートに登録していれば、同じ変更を配信サービスにも送る（送信待ちキュー経由なので、
@@ -225,7 +261,7 @@ class RecordForm:
             return
         if report_service.is_registered():
             try:
-                report_service.enqueue_logs(config.get_report_queue_path(), [report_item])
+                report_service.enqueue_logs(config.get_report_queue_path(), report_items)
             except OSError as e:
                 logger.warning("週次レポート用の変更を保存できませんでした: %s", e)
             report_service.start_sync()
