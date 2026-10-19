@@ -60,6 +60,8 @@ class JustDoItApp:
         self.key_bindings: list[str] = []
         # 閉じる前に確認が必要な画面が設定する。False を返すと閉じるのをやめる
         self.close_guard: Callable[[], bool] | None = None
+        # 確認（confirm.ask）を出しているか（出している間に、もう一つ重ねて出さないように）
+        self.dialog_open = False
         # 配信サービスと通信中かどうか（通信中は設定画面から離れられないようにする）
         self.busy = False
         # 振り返り・設定で最後に選んだタブ（次に開いたときも同じタブで表示する）

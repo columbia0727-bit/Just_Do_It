@@ -109,6 +109,14 @@ def _run_screens(lines: list[str], screenshot_dir: Path | None = None) -> bool:
 
     unsaved = focus.UnsavedTimer(now - timedelta(minutes=20), now - timedelta(minutes=8), 25 * 60)
 
+    def open_confirm() -> None:
+        from justdoit.ui import confirm
+
+        timer.show_focus_timer(app, 25 * 60)
+        root.update()
+        choices = [confirm.Choice("やめてメニューに戻る", True), confirm.Choice("タイマーを続ける", False, safe=True)]
+        confirm.make_dialog(app, "タイマーをやめますか？", "ここまでの 1分は記録されません。", choices, print)
+
     def open_calendar() -> None:
         from justdoit.ui.datepicker import DatePicker
 
@@ -123,6 +131,7 @@ def _run_screens(lines: list[str], screenshot_dir: Path | None = None) -> bool:
         ("メニュー", app.show_main_menu),
         ("初回の案内", app.show_welcome),
         ("集中タイマー", lambda: timer.show_focus_timer(app, 25 * 60)),
+        ("確認（タイマーをやめる）", open_confirm),
         ("記録画面", lambda: timer.show_record_form(app, 25, after_save=app.show_main_menu)),
         ("前回記録しなかったタイマー", lambda: timer.show_unsaved_record(app, unsaved)),
         ("休憩タイマー", lambda: timer.show_break_timer(app)),
