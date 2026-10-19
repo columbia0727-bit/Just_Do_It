@@ -97,6 +97,45 @@ class RecordsTest(unittest.TestCase):
         self.assertEqual((previous_year.labels[0], previous_year.labels[-1]), ("9月", "8月"))
         self.assertEqual(records.summarize_period(loaded, "week", today=today).title, "直近7日")
 
+    def test_compare_with_previous_week(self):
+        self.append("2026-08-10 09:00:00", "学習", 60)  # 8/7〜8/13
+        self.append("2026-08-20 09:00:00", "制作", 80)  # 8/14〜8/20
+        loaded = records.load_records(self.csv_path)
+        today = datetime(2026, 8, 20)
+
+        self.assertEqual(
+            records.compare_with_previous(loaded, "week", today=today), ("前の7日より +20分", True)
+        )
+        # 前の期間を見ているときは「その前の7日」。減ったときは、差ではなく前の期間の時間を出す
+        self.append("2026-08-05 09:00:00", "学習", 90)  # 7/31〜8/6
+        loaded = records.load_records(self.csv_path)
+        self.assertEqual(
+            records.compare_with_previous(loaded, "week", today=today, offset=1), ("その前の7日は 1時間 30分", False)
+        )
+
+    def test_compare_with_previous_same_or_nothing_to_compare(self):
+        self.append("2026-08-10 09:00:00", "学習", 30)
+        self.append("2026-08-20 09:00:00", "制作", 30)
+        loaded = records.load_records(self.csv_path)
+        today = datetime(2026, 8, 20)
+        self.assertEqual(records.compare_with_previous(loaded, "week", today=today).text, "前の7日と同じ")
+        # それより前に記録が無い期間・どちらも0分の期間は、比べない
+        self.assertIsNone(records.compare_with_previous(loaded, "week", today=today, offset=1))
+        self.assertIsNone(records.compare_with_previous(loaded, "week", today=datetime(2026, 10, 1)))
+        self.assertIsNone(records.compare_with_previous(records.empty_records(), "week", today=today))
+
+    def test_compare_year_with_same_day_last_year(self):
+        self.append("2024-08-01 09:00:00", "古い", 10)
+        self.append("2025-08-15 09:00:00", "学習", 60)  # 1年前の今日まで → 比べる
+        self.append("2025-08-25 09:00:00", "学習", 600)  # 1年前の今日より後 → 比べない
+        self.append("2026-08-01 09:00:00", "制作", 90)
+        loaded = records.load_records(self.csv_path)
+        result = records.compare_with_previous(loaded, "year", today=datetime(2026, 8, 20))
+        self.assertEqual(result, ("1年前の同じ時期より +30分", True))
+        # 前の12か月どうしは、12か月まるごと比べる
+        result = records.compare_with_previous(loaded, "year", today=datetime(2026, 8, 20), offset=1)
+        self.assertEqual(result, ("その前の12か月より +10時間 50分", True))
+
     def test_summarize_all_time(self):
         self.append("2026-08-12 09:00:00", "制作", 30)
         self.append("2025-01-05 09:00:00", "英語", 25)

@@ -19,6 +19,7 @@ from justdoit.records import (
     PERIODS,
     PeriodSummary,
     TaskTotal,
+    compare_with_previous,
     format_hours_mins,
     load_records,
     summarize_all_time,
@@ -33,7 +34,7 @@ if TYPE_CHECKING:
 
     from justdoit.ui.app import JustDoItApp
 
-DASHBOARD_SIZE = (740, 540)  # 右の列（よくやったこと）を決まった幅にしても、グラフが狭くならない幅
+DASHBOARD_SIZE = (750, 560)  # 右の列（よくやったこと）を決まった幅にしても、グラフが狭くならない幅・高さ
 EMPTY_SIZE = (420, 340)
 TOP_TASKS = 5
 MAX_TASK_NAME_LENGTH = 10
@@ -90,7 +91,7 @@ def show_dashboard(app: JustDoItApp, period: str | None = None, offset: int | No
     summary = summarize_period(records, app.dashboard_period, offset=app.dashboard_offset)
     build_period_nav(app, header, records, summary)
 
-    build_stats(screen, summary, records)
+    build_stats(app, screen, summary, records)
 
     body = tk.Frame(screen, bg=C.bg)
     body.pack(fill="both", expand=True)
@@ -153,12 +154,14 @@ def show_empty(app: JustDoItApp) -> None:
     ).pack(side="bottom", fill="x")
 
 
-def build_stats(screen: tk.Frame, summary: PeriodSummary, records: pd.DataFrame) -> None:
-    """合計時間（この期間・記録した日・累計）"""
+def build_stats(app: JustDoItApp, screen: tk.Frame, summary: PeriodSummary, records: pd.DataFrame) -> None:
+    """合計時間（この期間と、前の期間と比べた一言・記録した日・累計）"""
+    comparison = compare_with_previous(records, app.dashboard_period, offset=app.dashboard_offset)
+    note = (comparison.text, C.accent if comparison.increased else C.muted) if comparison else None
     make_stat_row(
         screen,
         [
-            (summary.title, format_hours_mins(summary.total_minutes), None),
+            (summary.title, format_hours_mins(summary.total_minutes), note),
             ("記録した日", f"{summary.active_days} / {summary.span_days}日", None),
             (f"累計（{len(records)}回）", format_hours_mins(int(records["分"].sum())), None),
         ],

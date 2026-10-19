@@ -337,6 +337,49 @@ def summarize_period(
     )
 
 
+PREVIOUS_NAMES = {"week": "前の7日", "month": "前の30日", "year": "前の12か月"}
+
+
+class Comparison(NamedTuple):
+    """前の期間と比べた一言（振り返りの合計時間の下に出す）"""
+
+    text: str
+    increased: bool  # 増えたときだけアクセント色にする
+
+
+def compare_with_previous(
+    records: pd.DataFrame, period: str, today: datetime | None = None, offset: int = 0
+) -> Comparison | None:
+    """表示している期間を、その前の期間（「‹ 前へ」で出る期間）と比べる
+
+    減ったときは差（マイナス）ではなく前の期間の時間を出す（責めない言い方にするため）。
+    それより前に記録が無い・どちらも0分のときは None（比べても意味がないため）。
+    年の直近12か月は今月が途中なので、前の12か月も1年前の今日までで比べる
+    （そのまま比べると、月の初めはいつも減ったように見えるため）。
+    """
+    today = today or datetime.now()
+    current = summarize_period(records, period, today=today, offset=offset)
+    if records.empty or records["日時"].min().date() >= current.start:
+        return None
+    previous = summarize_period(records, period, today=today, offset=offset + 1)
+    if period == "year" and offset == 0:
+        same_day_last_year = (pd.Timestamp(today) - pd.DateOffset(years=1)).date()
+        previous_minutes = int(_records_between(records, previous.start, same_day_last_year)["分"].sum())
+        name = "1年前の同じ時期"
+    else:
+        previous_minutes = previous.total_minutes
+        name = ("その" if offset else "") + PREVIOUS_NAMES[period]
+
+    diff = current.total_minutes - previous_minutes
+    if current.total_minutes == 0 and previous_minutes == 0:
+        return None
+    if diff > 0:
+        return Comparison(f"{name}より +{format_hours_mins(diff)}", True)
+    if diff == 0:
+        return Comparison(f"{name}と同じ", False)
+    return Comparison(f"{name}は {format_hours_mins(previous_minutes)}", False)
+
+
 @dataclass
 class TaskTotal:
     """作業内容ごとの通算（振り返りの「通算」に出す）"""
