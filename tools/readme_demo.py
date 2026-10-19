@@ -27,7 +27,7 @@ from justdoit import config, updates  # noqa: E402
 from tools.readme_screenshots import WEEKLY_GOAL_MINUTES, find_widgets, write_sample_records  # noqa: E402
 
 SCALE = 1.25  # 画面の大きさに対する倍率（README のスクリーンショットとそろえる）
-CANVAS_SIZE = (950, 700)  # GIF の大きさ（いちばん大きい振り返りの画面が入る大きさ）
+CANVAS_SIZE = (970, 730)  # GIF の大きさ（いちばん大きい振り返りの画面が入る大きさ）
 CANVAS_COLOR = "#e4e4e0"  # ウィンドウの外側の色
 FRAME_MS = 250  # 撮る間隔
 SETTLE_MS = 600  # 画面を切り替えてから撮り始めるまで待つ時間
