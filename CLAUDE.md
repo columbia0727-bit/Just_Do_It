@@ -45,6 +45,7 @@ node gas/tests/run.js
   - Windows：`dist/JustDoIt/JustDoIt.exe --self-test`
 
   終了コードが 0 なら成功。結果は作業フォルダの `selftest.log` に出る。同梱するファイルは、`--self-test` を通さずに削らない
+- **Windows の見た目は、GitHub Actions のスクリーンショットで確かめる**（手元に Windows の PC が無いため）。プルリクエストの Actions の実行ページの「Artifacts」に、`screenshots-Windows`（全画面のライト・ダーク）が保存される。手元では `--self-test --screenshots screenshots` で同じものが撮れる
 - GAS（`gas/report_service/`）を変えたら、`node gas/tests/run.js` を通す。main に取り込むと `deploy-gas.yml` が自動でデプロイする（URL は変わらない）
 
 ## 気をつけること

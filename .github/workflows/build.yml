@@ -88,20 +88,30 @@ jobs:
       # 同梱するもの・しないものは JustDoIt.spec で管理する（ダウンロードを軽くするため）
       - run: pyinstaller --noconfirm JustDoIt.spec
 
-      # ビルドしたアプリで画面を一通り表示して確かめる（同梱するファイルが足りず、配布版だけ動かない事故を防ぐ）
+      # ビルドしたアプリで画面を一通り表示して確かめる（同梱するファイルが足りず、配布版だけ動かない事故を防ぐ）。
+      # 各画面のスクリーンショットも撮って、この実行のページ（Summary の Artifacts）に保存する
+      # （手元に Windows の PC が無くても、Windows での見た目を確かめられるように）
       - name: Self-test (Windows)
         if: runner.os == 'Windows'
         run: |
-          $p = Start-Process dist/JustDoIt/JustDoIt.exe -ArgumentList "--self-test" -Wait -PassThru
+          $p = Start-Process dist/JustDoIt/JustDoIt.exe -ArgumentList "--self-test", "--screenshots", "screenshots" -Wait -PassThru
           Get-Content selftest.log -Encoding utf8
           exit $p.ExitCode
       - name: Self-test (macOS)
         if: runner.os == 'macOS'
         run: |
           status=0
-          "dist/Just do it.app/Contents/MacOS/JustDoIt" --self-test || status=$?
+          "dist/Just do it.app/Contents/MacOS/JustDoIt" --self-test --screenshots screenshots || status=$?
           cat selftest.log
           exit $status
+
+      # 動作確認が失敗したときも、どの画面がおかしいか見られるよう保存する
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: screenshots-${{ runner.os }}
+          path: screenshots/
+          if-no-files-found: ignore
 
       - name: Zip (Windows)
         if: runner.os == 'Windows'
@@ -127,9 +137,11 @@ jobs:
           python-version: "3.12"
       # リリースノートは CHANGELOG.md のそのバージョンの部分から作る（Releases 画面で説明文を書かなくてよい）
       - run: python tools/release_notes.py "$GITHUB_REF_NAME" > release_notes.md
+      # 配布する zip だけを集める（スクリーンショットは添付しない）
       - uses: actions/download-artifact@v8
         with:
           path: artifacts
+          pattern: JustDoIt-*
           merge-multiple: true
       - uses: softprops/action-gh-release@v3
         with:

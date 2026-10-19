@@ -5,23 +5,27 @@ HTTPS の通信に使うルート証明書を読み込めるかと、
 画面を持つアプリは、ビルドの設定（同梱するファイル）しだいで、ソースから起動したときは動くのに
 配布版だけ動かないことがあるため、GitHub Actions でビルドした直後に Windows・macOS それぞれで実行する。
 結果は selftest.log に書き、問題がなければ終了コード 0、あれば 1 で終わる。
+
+--screenshots フォルダ名 を付けると、各画面のスクリーンショットもそのフォルダに保存する
+（手元に Windows の PC が無くても、GitHub Actions の Windows ビルドで見た目を確かめられるように）。
 """
 
 from datetime import datetime, timedelta
 from pathlib import Path
 import tempfile
+import time
 import tkinter as tk
 import traceback
 
 LOG_FILE = "selftest.log"
 
 
-def run(log_path: Path = Path(LOG_FILE)) -> int:
+def run(log_path: Path = Path(LOG_FILE), screenshot_dir: Path | None = None) -> int:
     lines: list[str] = []
     try:
         failed = _check_certificates(lines)
         failed = _check_token_vault(lines) or failed
-        failed = _run_screens(lines) or failed
+        failed = _run_screens(lines, screenshot_dir) or failed
     except Exception:
         lines.append("FAILED:\n" + traceback.format_exc())
         failed = True
@@ -72,7 +76,7 @@ def _check_token_vault(lines: list[str]) -> bool:
     return not ok
 
 
-def _run_screens(lines: list[str]) -> bool:
+def _run_screens(lines: list[str], screenshot_dir: Path | None = None) -> bool:
     from justdoit import config, focus, records, report_service, updates
 
     try:
@@ -98,6 +102,10 @@ def _run_screens(lines: list[str]) -> bool:
     errors: list[str] = []
     root.report_callback_exception = lambda *exc: errors.append("".join(traceback.format_exception(*exc)))
     app = app_module.JustDoItApp(root)
+    if screenshot_dir:
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        # ほかのウィンドウに隠れていると、その上から撮ってしまうので、いちばん前に出しておく
+        root.attributes("-topmost", True)
 
     unsaved = focus.UnsavedTimer(now - timedelta(minutes=20), now - timedelta(minutes=8), 25 * 60)
 
@@ -131,7 +139,7 @@ def _run_screens(lines: list[str]) -> bool:
     for appearance in ("light", "dark"):
         # 週の目標も決めておき、メニューの「今週 … / 目標 …」も表示する
         config.save_preferences(config.Preferences(appearance=appearance, weekly_goal_minutes=180))
-        for name, show in screens:
+        for number, (name, show) in enumerate(screens, start=1):
             before = len(errors)
             try:
                 show()
@@ -143,6 +151,8 @@ def _run_screens(lines: list[str]) -> bool:
             # ウィンドウの大きさも残す（中身に合わせて広げた画面は、決めた大きさより大きくなる）
             size = f"{root.winfo_width()}x{root.winfo_height()}"
             lines.append(f"[{appearance}] {name}: {'OK' if ok else 'ERROR'} ({size})")
+            if screenshot_dir:
+                _save_screenshot(root, screenshot_dir / f"{number:02d}_{appearance}_{name}.png", lines)
 
     # グラフは matplotlib のフォントなどが同梱されていないと描けないので、描けたかも確かめる
     dashboard.show_dashboard(app, "week")
@@ -157,6 +167,21 @@ def _run_screens(lines: list[str]) -> bool:
     root.destroy()
     lines.extend(errors)
     return bool(errors)
+
+
+def _save_screenshot(root: tk.Tk, path: Path, lines: list[str]) -> None:
+    """ウィンドウの中身を撮って保存する（撮れなくても動作確認は失敗にしない。見た目を確かめるための補助なので）"""
+    from PIL import ImageGrab
+
+    # 画面が描き終わるのを少し待つ
+    for _ in range(3):
+        root.update()
+        time.sleep(0.1)
+    x, y = root.winfo_rootx(), root.winfo_rooty()
+    try:
+        ImageGrab.grab(bbox=(x, y, x + root.winfo_width(), y + root.winfo_height())).save(path)
+    except (OSError, ValueError) as e:  # 画面を撮る仕組みが無い環境（Linux で XCB が無いなど）
+        lines.append(f"スクリーンショットを撮れませんでした（{path.name}）: {e}")
 
 
 def _check_fits(root: tk.Tk, name: str, errors: list[str]) -> None:

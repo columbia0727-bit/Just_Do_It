@@ -31,6 +31,28 @@ class SelfTestTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, log)
         self.assertIn("RESULT: OK", log)
 
+    def test_screenshots_are_saved(self):
+        """--screenshots を付けると、全画面（ライト・ダーク）のスクリーンショットを保存する"""
+        with tempfile.TemporaryDirectory() as tmp:
+            result = subprocess.run(
+                [sys.executable, str(PROJECT_DIR / "main.py"), "--self-test", "--screenshots", "shots"],
+                cwd=tmp,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=180,
+            )
+            log = (Path(tmp) / "selftest.log").read_text(encoding="utf-8")
+            shots = sorted((Path(tmp) / "shots").glob("*.png"))
+        if "SKIPPED" in log:
+            self.skipTest("画面（ディスプレイ）がない環境では確かめられない")
+        if "スクリーンショットを撮れませんでした" in log:
+            self.skipTest("この環境では画面を撮れない（動作確認そのものは失敗にしない）")
+        self.assertEqual(result.returncode, 0, log)
+        screens = log.count("[light] ")
+        self.assertEqual(len(shots), screens * 2, [shot.name for shot in shots])
+
 
 if __name__ == "__main__":
     unittest.main()
