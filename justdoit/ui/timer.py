@@ -256,7 +256,8 @@ def show_unsaved_record(app: JustDoItApp, unsaved: focus.UnsavedTimer) -> None:
         unsaved.minutes(),
         after_save=app.show_main_menu,
         recorded_at=when,
-        note=f"前回のタイマー（{when.month}/{when.day} {when:%H:%M} ごろまで）が記録されていません",
+        # 日時の途中（空白）で折り返されないよう、改行する位置を決めておく
+        note=f"前回のタイマー（{when.month}/{when.day} {when:%H:%M} ごろまで）が\n記録されていません",
     )
 
 

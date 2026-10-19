@@ -37,7 +37,7 @@ if TYPE_CHECKING:
     from justdoit.ui.app import JustDoItApp
 
 SETTINGS_SIZE = (460, 620)
-REPORT_PROBLEM_SIZE = (420, 370)
+REPORT_PROBLEM_SIZE = (420, 400)
 REPORT_TEXT_WIDTH = 364  # 「不具合を報告する」画面の、折り返す文章の幅（画面の幅から余白を引いた幅）
 TABS = [("timer", "全般"), ("report", "週次レポート")]
 
@@ -112,7 +112,8 @@ def show_report_problem(app: JustDoItApp) -> None:
     ).pack(fill="x")
     make_label(
         screen,
-        "GitHub のアカウントが無い場合は、次のアドレスへメールで送ってください。",
+        # 「GitHub」の後ろの空白で折り返されないよう（Windows のフォントで起きた）、改行する位置を決めておく
+        "GitHub のアカウントが無い場合は、\n次のアドレスへメールで送ってください。",
         size=10,
         color=C.muted,
         wraplength=app.px(REPORT_TEXT_WIDTH),
@@ -143,8 +144,9 @@ def show_report_problem(app: JustDoItApp) -> None:
         again.config(text="コピーしました")
         copy_link.config(text="コピー")
 
+    # 画面の下の端に置くと、フォントの大きさ（OS）によってアドレスとの間隔が変わるので、アドレスの下に置く
     again = make_link(screen, "情報をもう一度コピーする", copy_again)
-    again.pack(side="bottom")
+    again.pack(pady=(app.px(28), 0))
 
 
 def make_selectable_text(app: JustDoItApp, parent: tk.Widget, text: str, color: str | None = None) -> tk.Entry:
