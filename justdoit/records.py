@@ -337,6 +337,27 @@ def summarize_period(
     )
 
 
+@dataclass
+class TaskTotal:
+    """作業内容ごとの通算（振り返りの「通算」に出す）"""
+
+    task: str
+    minutes: int
+    count: int  # 記録した回数
+    first_day: date  # 最初に記録した日
+
+
+def summarize_all_time(records: pd.DataFrame) -> list[TaskTotal]:
+    """作業内容ごとの全期間の合計（時間の多い順。0分の記録は数えない）"""
+    done = records[records["分"] > 0]
+    grouped = done.groupby("作業内容").agg(minutes=("分", "sum"), count=("分", "size"), first=("日時", "min"))
+    grouped = grouped.sort_values(["minutes", "first"], ascending=[False, True])
+    return [
+        TaskTotal(str(task), int(row["minutes"]), int(row["count"]), row["first"].date())
+        for task, row in grouped.iterrows()
+    ]
+
+
 def _records_between(records: pd.DataFrame, start: date, end: date) -> pd.DataFrame:
     """start 〜 end（両端を含む）の日の記録だけを取り出す"""
     dates = records["日時"].dt.date

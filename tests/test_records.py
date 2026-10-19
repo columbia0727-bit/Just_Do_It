@@ -97,6 +97,18 @@ class RecordsTest(unittest.TestCase):
         self.assertEqual((previous_year.labels[0], previous_year.labels[-1]), ("9月", "8月"))
         self.assertEqual(records.summarize_period(loaded, "week", today=today).title, "直近7日")
 
+    def test_summarize_all_time(self):
+        self.append("2026-08-12 09:00:00", "制作", 30)
+        self.append("2025-01-05 09:00:00", "英語", 25)
+        self.append("2026-08-20 09:00:00", "英語", 50)
+        self.append("2026-08-20 10:00:00", "読書", 0)
+        totals = records.summarize_all_time(records.load_records(self.csv_path))
+        self.assertEqual(
+            [(t.task, t.minutes, t.count, t.first_day) for t in totals],
+            [("英語", 75, 2, date(2025, 1, 5)), ("制作", 30, 1, date(2026, 8, 12))],
+        )
+        self.assertEqual(records.summarize_all_time(records.empty_records()), [])
+
     def test_rows_with_invalid_datetime_are_skipped(self):
         self.csv_path.parent.mkdir(parents=True)
         self.csv_path.write_text(
