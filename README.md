@@ -11,6 +11,8 @@
 やる気が出ないときこそ、まずは5分。タイマーで集中し、終わったら「何をやったか」を一言記録。
 記録はグラフで振り返れて、毎週メールでレポートも届きます。
 
+<p align="center"><img src="docs/demo.gif" alt="「5分だけやる」を押し、途中で終えて記録し、振り返りのグラフを見るまでの流れ" width="640"></p>
+
 > **しくみの見どころ**（実装はすべて Claude Code。分担は[「開発のしかた」](#-開発のしかたclaude-code-との分担)、詳しくは[「工夫した点」](#-工夫した点開発について)）
 > - **配布版そのものを CI で動かして確かめる**：ビルドしたアプリが全画面と通信の準備を自分で確かめる `--self-test` を作り、GitHub Actions が Windows・macOS の両方で通ってから配布する
 > - **費用ゼロの配信サービス**：Google Apps Script で、週次レポートのメールと PC 間の同期を無料で動かす。利用者はメールアドレスを登録するだけで、トークンはハッシュだけを保存する
@@ -223,8 +225,9 @@ just-do-it/
 ├── tests/                     # 単体テスト
 ├── tools/
 │   ├── release_notes.py       # CHANGELOG.md からリリースノートを作る（リリース時に Actions が実行）
-│   └── readme_screenshots.py  # README 用スクリーンショットを、サンプルの記録で撮り直す
-├── docs/                      # README 用スクリーンショット（tools/readme_screenshots.py がサンプルの記録で撮る）
+│   ├── readme_screenshots.py  # README 用スクリーンショットを、サンプルの記録で撮り直す
+│   └── readme_demo.py         # README の冒頭のデモ（docs/demo.gif）を、アプリを自動で操作して作る
+├── docs/                      # README 用スクリーンショットとデモ（tools/ のスクリプトがサンプルの記録で作る）
 ├── JustDoIt.spec              # ビルド設定
 ├── CLAUDE.md                  # Claude Code で開発するときの決まりごと
 └── .github/                   # GitHub Actions（workflows/）、不具合の報告フォーム（ISSUE_TEMPLATE/）
