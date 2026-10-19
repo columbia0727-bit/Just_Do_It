@@ -208,6 +208,19 @@ def update_record(
     write_rows(csv_path, rows)
 
 
+def same_task_records(csv_path: Path, task: str, exclude_row: int | None = None) -> list[Record]:
+    """作業内容が task と同じ記録（exclude_row の記録は除く。名前をまとめて変えるときに使う）"""
+    return [r for r in list_records(csv_path) if r.task == task and r.row_index != exclude_row]
+
+
+def rename_records(csv_path: Path, targets: list[Record], new_task: str) -> None:
+    """targets の記録の作業内容を、まとめて new_task に変える（1回で書き直す）"""
+    rows = read_rows(csv_path)
+    for record in targets:
+        rows[record.row_index][1] = new_task
+    write_rows(csv_path, rows)
+
+
 def delete_record(csv_path: Path, row_index: int) -> None:
     rows = read_rows(csv_path)
     del rows[row_index]

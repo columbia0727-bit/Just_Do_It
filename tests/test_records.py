@@ -189,6 +189,25 @@ class EditRecordsTest(unittest.TestCase):
         lines = self.csv_path.read_text(encoding="utf-8-sig").splitlines()
         self.assertEqual(lines, ["壊れた行,x,1分", "2026-10-13 09:00:00,読書,45分"])
 
+    def test_rename_records_with_the_same_task(self):
+        records.append_record_to_csv(self.csv_path, "2026-10-14 09:00:00", "制作", 50)
+        records.append_record_to_csv(self.csv_path, "2026-10-15 09:00:00", "制作 ", 5)  # 前後の空白は同じ名前とみなす
+        others = records.same_task_records(self.csv_path, "制作", exclude_row=0)
+        self.assertEqual([r.row_index for r in others], [4, 3])
+
+        records.rename_records(self.csv_path, others, "ポートフォリオ制作")
+        lines = self.csv_path.read_text(encoding="utf-8-sig").splitlines()
+        self.assertEqual(
+            lines,
+            [
+                "2026-10-12 09:00:00,制作,25分",  # 除いた記録は変えない
+                "壊れた行,x,1分",
+                "2026-10-13 09:00:00,学習,30分",
+                "2026-10-14 09:00:00,ポートフォリオ制作,50分",
+                "2026-10-15 09:00:00,ポートフォリオ制作,5分",
+            ],
+        )
+
     def test_group_by_month_is_newest_first(self):
         records.append_record_to_csv(self.csv_path, "2026-09-30 23:00:00", "読書", 20)
         months = records.group_by_month(records.list_records(self.csv_path))
