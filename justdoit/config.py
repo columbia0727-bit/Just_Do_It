@@ -2,6 +2,7 @@
 
 from dataclasses import asdict, dataclass, fields
 import json
+import logging
 import os
 from pathlib import Path
 import platform
@@ -31,10 +32,9 @@ def get_data_dir() -> Path:
     if not getattr(sys, "frozen", False):
         return PROJECT_DIR
 
-    system = platform.system()
-    if system == "Windows":
+    if sys.platform == "win32":
         base = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
-    elif system == "Darwin":
+    elif sys.platform == "darwin":
         base = Path.home() / "Library" / "Application Support"
     else:
         base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
@@ -47,6 +47,11 @@ def get_csv_path() -> Path:
 
 def get_report_queue_path() -> Path:
     return get_data_dir() / "log" / "report_queue.json"
+
+
+def get_unsaved_timer_path() -> Path:
+    """記録する前のタイマー（アプリや PC が落ちても、次に起動したときに記録できるように残す）"""
+    return get_data_dir() / "log" / "unsaved_timer.json"
 
 
 def get_config_path() -> Path:
@@ -216,8 +221,17 @@ def get_error_log_path() -> Path:
     return get_data_dir() / "log" / "error.log"
 
 
+def os_description() -> str:
+    """OS の名前とバージョン（例: 「macOS 15.1」「Windows 11 (10.0.26100)」。問い合わせのときに原因を絞り込むため）"""
+    if sys.platform == "darwin":
+        return f"macOS {platform.mac_ver()[0]}"
+    if sys.platform == "win32":
+        return f"Windows {platform.release()} ({platform.version()})"
+    return f"{platform.system()} {platform.release()}"
+
+
 def append_error_log(details: str) -> Path:
-    """エラーの内容を日時とバージョンつきで log/error.log に追記し、そのファイルの場所を返す（書けなくても止めない）"""
+    """エラーの内容を日時・バージョン・OS つきで error.log に追記し、ファイルの場所を返す（書けなくても止めない）"""
     from datetime import datetime
 
     from justdoit import __version__
@@ -226,7 +240,34 @@ def append_error_log(details: str) -> Path:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "a", encoding="utf-8") as f:
-            f.write(f"--- {datetime.now():%Y-%m-%d %H:%M:%S}（バージョン {__version__}）\n{details.rstrip()}\n\n")
+            header = f"--- {datetime.now():%Y-%m-%d %H:%M:%S}（バージョン {__version__}・{os_description()}）"
+            f.write(f"{header}\n{details.rstrip()}\n\n")
     except OSError:
         pass
     return path
+
+
+class ErrorLogHandler(logging.Handler):
+    """ログの警告・エラーを error.log に残す（配布版は画面だけのアプリで、コンソールに出しても見えないため）"""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        append_error_log(self.format(record))
+
+
+def setup_logging() -> None:
+    """ログの出し先を決める（起動したときに1回呼ぶ）
+
+    警告・エラーは error.log に残す。ソースから起動したときは、記録の保存などの情報もコンソールに出す。
+    """
+    logger = logging.getLogger("justdoit")
+    if logger.handlers:
+        return
+    logger.setLevel(logging.INFO)
+    to_file = ErrorLogHandler(logging.WARNING)
+    to_file.setFormatter(logging.Formatter("%(name)s: %(message)s"))
+    logger.addHandler(to_file)
+    # 配布版（画面だけのアプリ）では sys.stderr が無い
+    if sys.stderr is not None:
+        to_console = logging.StreamHandler()
+        to_console.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+        logger.addHandler(to_console)

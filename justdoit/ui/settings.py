@@ -7,32 +7,38 @@ from __future__ import annotations
 
 from dataclasses import replace
 from functools import partial
+import math
 import os
 from pathlib import Path
 import subprocess
 import sys
 import tkinter as tk
+from tkinter import font as tkfont
 from tkinter import messagebox
 from typing import TYPE_CHECKING
 import webbrowser
 
-from justdoit import __version__, config
+from justdoit import __version__, config, support
 from justdoit.records import format_hours_mins
 from justdoit.ui import theme
 from justdoit.ui.report_settings import TEXT_WIDTH, build_report_section, update_goal
 from justdoit.ui.theme import (
     C,
+    make_button,
     make_checkbox,
     make_label,
     make_link,
     make_select,
     make_tabs,
+    ui_font,
 )
 
 if TYPE_CHECKING:
     from justdoit.ui.app import JustDoItApp
 
 SETTINGS_SIZE = (460, 620)
+REPORT_PROBLEM_SIZE = (420, 370)
+REPORT_TEXT_WIDTH = 364  # 「不具合を報告する」画面の、折り返す文章の幅（画面の幅から余白を引いた幅）
 TABS = [("timer", "全般"), ("report", "週次レポート")]
 
 
@@ -61,16 +67,121 @@ def show_settings(app: JustDoItApp, tab: str | None = None) -> None:
 
 
 def build_version(app: JustDoItApp, screen: tk.Frame) -> tk.Frame:
-    """保存先の上: 今のバージョンと、新しいバージョンがあればダウンロードページへの案内"""
-    row = tk.Frame(screen, bg=screen["bg"])
-    row.pack(side="bottom", fill="x", pady=(0, app.px(6)))
-    make_label(row, f"バージョン {__version__}", size=9, color=C.muted).pack(side="left")
+    """保存先の上: 今のバージョンと「不具合を報告する」、新しいバージョンがあればダウンロードページへの案内"""
+    rows = tk.Frame(screen, bg=screen["bg"])
+    rows.pack(side="bottom", fill="x", pady=(0, app.px(6)))
     if app.new_release:
         release = app.new_release
         make_link(
-            row, f"新しいバージョン {release.version} をダウンロード", lambda: webbrowser.open(release.url), accent=True
-        ).pack(side="right")
-    return row
+            rows,
+            f"新しいバージョン {release.version} をダウンロード",
+            lambda: webbrowser.open(release.url),
+            accent=True,
+        ).pack(anchor="w", pady=(0, app.px(4)))
+    row = tk.Frame(rows, bg=screen["bg"])
+    row.pack(fill="x")
+    make_label(row, f"バージョン {__version__}", size=9, color=C.muted).pack(side="left")
+    make_link(row, "不具合を報告する", lambda: show_report_problem(app)).pack(side="right")
+    return rows
+
+
+def show_report_problem(app: JustDoItApp) -> None:
+    """「不具合を報告する」画面。原因を調べるための情報をクリップボードにコピーし、報告の送り先を案内する
+
+    情報をコピーするだけでは、このアプリしか知らない人には送り先がわからないため、送り先まで示す。
+    確認ダイアログにしないのは、閉じるとメールアドレスが見えなくなり、メールを書きながら確かめられないため。
+    """
+    screen = app.make_screen(REPORT_PROBLEM_SIZE)
+    app.make_header(screen, "不具合を報告する", back=lambda: show_settings(app))
+    copy_support_info(app)
+
+    make_label(screen, "原因を調べるための情報をコピーしました", size=12, bold=True).pack(anchor="w")
+    make_label(
+        screen,
+        "バージョン・OS・最近のエラーなど\n（作業内容とメールアドレスは入っていません）",
+        size=10,
+        color=C.muted,
+        wraplength=app.px(REPORT_TEXT_WIDTH),
+        justify="left",
+    ).pack(anchor="w", pady=(4, 18))
+
+    make_label(screen, "起きたことと一緒に貼り付けて、送ってください。", size=11).pack(anchor="w", pady=(0, 12))
+    # この画面でいちばんしてほしい操作なので、塗りつぶしのボタンにする（1画面に1つ）
+    make_button(
+        screen, "GitHub の報告フォームを開く", lambda: webbrowser.open(support.BUG_REPORT_URL), primary=True
+    ).pack(fill="x")
+    make_label(
+        screen,
+        "GitHub のアカウントが無い場合は、次のアドレスへメールで送ってください。",
+        size=10,
+        color=C.muted,
+        wraplength=app.px(REPORT_TEXT_WIDTH),
+        justify="left",
+    ).pack(anchor="w", pady=(18, 4))
+    address_row = tk.Frame(screen, bg=screen["bg"])
+    address_row.pack(fill="x")
+    # 入力欄は文字の左に少し余白があるので、そのぶん右に寄せて、ほかの文字と左端をそろえる
+    # 2つ目の送り先として目に入るよう、アドレスはアクセント色にする
+    make_selectable_text(app, address_row, support.CONTACT_EMAIL, color=C.accent).pack(
+        side="left", padx=(app.px(2), 0)
+    )
+
+    # クリップボードには1つしか入らないので、アドレスをコピーすると情報は消える。
+    # 本文に貼る情報は、下の「情報をもう一度コピーする」でコピーし直せる
+    def copy_address() -> None:
+        app.root.clipboard_clear()
+        app.root.clipboard_append(support.CONTACT_EMAIL)
+        copy_link.config(text="コピーしました")
+        again.config(text="情報をもう一度コピーする")
+
+    copy_link = make_link(address_row, "コピー", copy_address)
+    copy_link.pack(side="left", padx=(app.px(12), 0))
+
+    # アドレスをコピーしたあとや、メールを書いている間にほかのものをコピーして消してしまったとき用
+    def copy_again() -> None:
+        copy_support_info(app)
+        again.config(text="コピーしました")
+        copy_link.config(text="コピー")
+
+    again = make_link(screen, "情報をもう一度コピーする", copy_again)
+    again.pack(side="bottom")
+
+
+def make_selectable_text(app: JustDoItApp, parent: tk.Widget, text: str, color: str | None = None) -> tk.Entry:
+    """選択してコピーできる文字（見た目はほかの文字と同じ。Label は選択できないため、書き換えられない入力欄で出す）"""
+    font = tkfont.Font(font=ui_font(12))
+    # 入力欄の幅は「0」の幅の何個分かで決まるので、文字の幅から計算する（広すぎると、横の「コピー」が離れる）
+    width = math.ceil(font.measure(text) / font.measure("0")) + 1
+    entry = tk.Entry(
+        parent,
+        font=font,
+        relief="flat",
+        bd=0,
+        highlightthickness=0,
+        bg=parent["bg"],
+        readonlybackground=parent["bg"],
+        fg=color or C.text,
+        selectbackground=C.accent,
+        selectforeground=C.on_accent,
+        insertbackground=C.text,
+        width=width,
+    )
+    entry.insert(0, text)
+    entry.config(state="readonly")
+    # Mac では、画面を切り替えてウィンドウの大きさが変わると、入力欄だけ描き直されずに文字が消えることがある
+    # （設定画面からこの画面に移ったときに起きた）。ウィンドウの大きさが変わったら描き直す
+    def redraw() -> None:
+        if entry.winfo_exists():
+            entry.config(readonlybackground=parent["bg"])
+
+    app.bind_key("<Configure>", redraw)
+    return entry
+
+
+def copy_support_info(app: JustDoItApp) -> None:
+    last_sync = app.last_sync[0] if app.last_sync else None
+    app.root.clipboard_clear()
+    app.root.clipboard_append(support.support_info(last_sync))
 
 
 def build_data_folder(app: JustDoItApp, screen: tk.Frame) -> tk.Frame:

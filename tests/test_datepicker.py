@@ -49,14 +49,14 @@ class DatePickerTest(unittest.TestCase):
         }
 
     def test_shows_today_and_chooses_with_keyboard(self):
-        self.assertIn("今日 10/15（木）", self.picker.cget("text"))
+        self.assertIn("今日 10/15（木）", self.picker.text)
         popup = self.open()
         popup.event_generate("<Left>")
         popup.event_generate("<Left>")
         popup.event_generate("<Return>")
         self.root.update()
         self.assertEqual(self.chosen, [date(2026, 10, 13)])
-        self.assertIn("10/13（火）", self.picker.cget("text"))
+        self.assertIn("10/13（火）", self.picker.text)
         self.assertFalse(popup.winfo_exists(), "選んだらカレンダーを閉じる")
         # カレンダーの操作で、画面全体のキー（前の期間へ・保存など）が動かない
         self.assertEqual(self.screen_keys, [])

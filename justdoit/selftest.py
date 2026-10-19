@@ -73,7 +73,7 @@ def _check_token_vault(lines: list[str]) -> bool:
 
 
 def _run_screens(lines: list[str]) -> bool:
-    from justdoit import config, records, report_service, updates
+    from justdoit import config, focus, records, report_service, updates
 
     try:
         root = tk.Tk()
@@ -99,12 +99,14 @@ def _run_screens(lines: list[str]) -> bool:
     root.report_callback_exception = lambda *exc: errors.append("".join(traceback.format_exception(*exc)))
     app = app_module.JustDoItApp(root)
 
+    unsaved = focus.UnsavedTimer(now - timedelta(minutes=20), now - timedelta(minutes=8), 25 * 60)
+
     def open_calendar() -> None:
         from justdoit.ui.datepicker import DatePicker
 
         timer.show_manual_record(app)
         root.update()
-        pickers = [w for w in _find_widgets(root, "Label") if isinstance(w, DatePicker)]
+        pickers = [w for w in _find_widgets(root, "Canvas") if isinstance(w, DatePicker)]
         if not pickers:
             raise RuntimeError("手動記録に日付の欄がありません")
         pickers[0].open()
@@ -114,6 +116,7 @@ def _run_screens(lines: list[str]) -> bool:
         ("初回の案内", app.show_welcome),
         ("集中タイマー", lambda: timer.show_focus_timer(app, 25 * 60)),
         ("記録画面", lambda: timer.show_record_form(app, 25, after_save=app.show_main_menu)),
+        ("前回記録しなかったタイマー", lambda: timer.show_unsaved_record(app, unsaved)),
         ("休憩タイマー", lambda: timer.show_break_timer(app)),
         ("手動記録", lambda: timer.show_manual_record(app)),
         ("手動記録（カレンダー）", open_calendar),
@@ -123,6 +126,7 @@ def _run_screens(lines: list[str]) -> bool:
         ("記録一覧", lambda: history.show_history(app, back=app.show_main_menu)),
         ("設定（全般）", lambda: settings.show_settings(app, "timer")),
         ("設定（週次レポート）", lambda: settings.show_settings(app, "report")),
+        ("不具合を報告する", lambda: settings.show_report_problem(app)),
     ]
     for appearance in ("light", "dark"):
         # 週の目標も決めておき、メニューの「今週 … / 目標 …」も表示する
@@ -132,21 +136,41 @@ def _run_screens(lines: list[str]) -> bool:
             try:
                 show()
                 root.update()
+                _check_fits(root, f"[{appearance}] {name}", errors)
             except Exception:
                 errors.append(traceback.format_exc())
             ok = len(errors) == before
-            lines.append(f"[{appearance}] {name}: {'OK' if ok else 'ERROR'}")
+            # ウィンドウの大きさも残す（中身に合わせて広げた画面は、決めた大きさより大きくなる）
+            size = f"{root.winfo_width()}x{root.winfo_height()}"
+            lines.append(f"[{appearance}] {name}: {'OK' if ok else 'ERROR'} ({size})")
 
     # グラフは matplotlib のフォントなどが同梱されていないと描けないので、描けたかも確かめる
     dashboard.show_dashboard(app, "week")
     root.update()
-    if not _find_widgets(root, "Canvas"):
+    # （ボタンも Canvas で描いているので、それ以外の Canvas があるかで確かめる）
+    from justdoit.ui.theme import PillButton
+
+    if not [w for w in _find_widgets(root, "Canvas") if not isinstance(w, PillButton)]:
         errors.append("振り返りのグラフが表示されていません")
 
     app.close_guard = None
     root.destroy()
     lines.extend(errors)
     return bool(errors)
+
+
+def _check_fits(root: tk.Tk, name: str, errors: list[str]) -> None:
+    """画面の中身がウィンドウに収まっているか（収まらないと、下の文字が隠れたり、ボタンが潰れたりする）
+
+    文字や部品の大きさは OS・フォント・Tk の版で変わるので、配布版そのもので確かめる。
+    """
+    screen = root.winfo_children()[0]
+    needed_width, needed_height = screen.winfo_reqwidth(), screen.winfo_reqheight()
+    width, height = root.winfo_width(), root.winfo_height()
+    if needed_width > width or needed_height > height:
+        errors.append(
+            f"{name}: 中身（{needed_width}x{needed_height}）がウィンドウ（{width}x{height}）に収まっていません"
+        )
 
 
 def _find_widgets(widget: tk.Misc, widget_class: str) -> list[tk.Misc]:

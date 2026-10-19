@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import logging
 from pathlib import Path
 import tkinter as tk
 from tkinter import messagebox, ttk
@@ -24,6 +25,7 @@ from justdoit.ui.theme import C, make_button, make_entry, make_label, make_selec
 if TYPE_CHECKING:
     from justdoit.ui.app import JustDoItApp
 
+logger = logging.getLogger(__name__)
 HISTORY_SIZE = (560, 580)
 
 
@@ -223,6 +225,6 @@ class RecordForm:
             try:
                 report_service.enqueue_logs(config.get_report_queue_path(), [report_item])
             except OSError as e:
-                print(f"⚠️ 週次レポート用の変更を保存できませんでした: {e}")
+                logger.warning("週次レポート用の変更を保存できませんでした: %s", e)
             report_service.start_sync()
         self.on_changed()

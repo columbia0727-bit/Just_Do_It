@@ -2,16 +2,15 @@
 
 from collections.abc import Callable
 from datetime import datetime
-import platform
+import logging
 import queue
 import sys
 import threading
 import tkinter as tk
 from tkinter import messagebox
-import traceback
 import webbrowser
 
-from justdoit import config, notify, report_service, sync, updates
+from justdoit import config, focus, notify, report_service, sync, updates
 from justdoit.records import (
     append_record_to_csv,
     format_hours_mins,
@@ -24,6 +23,7 @@ from justdoit.records import (
 from justdoit.ui import dashboard, settings, theme, timer
 from justdoit.ui.theme import C, make_back_button, make_button, make_label, make_link
 
+logger = logging.getLogger(__name__)
 MENU_SIZE = (320, 340)
 WELCOME_SIZE = (360, 460)
 
@@ -52,7 +52,7 @@ class JustDoItApp:
 
         # Windows の表示倍率（125%・150% など）。画面サイズや余白をこの倍率で広げる
         # （Mac は OS が拡大するので 1 のまま）
-        self.scale = self.root.winfo_fpixels("1i") / 96 if platform.system() == "Windows" else 1.0
+        self.scale = self.root.winfo_fpixels("1i") / 96 if sys.platform == "win32" else 1.0
         theme.set_scale(self.scale)
         # タイマーなどで予約した after 処理（画面を切り替えるときに取り消す）
         self.after_id: str | None = None
@@ -80,7 +80,14 @@ class JustDoItApp:
         # 同期が終わったら呼ぶ、今の画面の関数（設定画面が結果を表示するため。画面を切り替えると空にする）
         self.sync_listeners: list[Callable[[sync.SyncResult | None, Exception | None], None]] = []
 
-        if is_first_launch():
+        # 前回、記録する前にアプリや PC が終了したタイマーがあれば、まず記録できるようにする
+        unsaved = focus.load_unsaved(config.get_unsaved_timer_path())
+        if unsaved and not unsaved.worth_asking():
+            focus.clear_unsaved(config.get_unsaved_timer_path())
+            unsaved = None
+        if unsaved:
+            timer.show_unsaved_record(self, unsaved)
+        elif is_first_launch():
             self.show_welcome()
         else:
             self.show_main_menu()
@@ -145,7 +152,9 @@ class JustDoItApp:
                 # メールのリンクなどから配信停止されていた
                 report_service.clear_registration()
             if error:
-                print(f"⚠️ 同期できませんでした: {error}")
+                # つながらないだけ（オフライン）なら、次に起動したときにまた同期するので error.log には残さない
+                offline = getattr(error, "code", None) in ("network", "busy")
+                logger.log(logging.INFO if offline else logging.WARNING, "同期できませんでした: %s", error)
             # ほかの PC の記録・週の目標が届いたら、メニューの「今日の合計」「週の目標」を表示し直す
             if result and (result.changed or result.goal_updated is not None) and self.on_menu:
                 self.show_main_menu()
@@ -168,6 +177,8 @@ class JustDoItApp:
         self.close_guard = None
         self.on_menu = False
         self.sync_listeners = []
+        # タイマーが残り時間を出していたタイトルを元に戻す
+        self.root.title(config.APP_NAME)
         for widget in self.root.winfo_children():
             widget.destroy()
         # 「デバイスに合わせる」のときは、画面を切り替えるたびに OS の設定を確かめて色を合わせる
@@ -175,7 +186,25 @@ class JustDoItApp:
         self.resize_window(*size)
         screen = tk.Frame(self.root, bg=C.bg, padx=self.px(24), pady=self.px(20))
         screen.pack(fill="both", expand=True)
+        # 画面を作り終えたら、中身が収まっているか確かめる（after_idle にしないのは、画面を作る途中で
+        # update_idletasks() を呼ぶ部品（候補のボタンを折り返して並べる make_chips）があり、作りかけで動いてしまうため）
+        self.root.after(0, lambda: self.fit_to_content(screen))
         return screen
+
+    def fit_to_content(self, screen: tk.Frame) -> None:
+        """中身がウィンドウに収まらないときは、収まる大きさまでウィンドウを広げる
+
+        画面の大きさは画面ごとに決めているが、文字や部品の大きさは OS・フォント・Tk の版で変わる
+        （Tk 9 では入力欄やチェックボックスが大きく、ボタンが潰れたり、下の文字が隠れたりした）。
+        """
+        if not screen.winfo_exists() or not self.window_size:
+            return
+        # 作り終えた中身の大きさを計算させる（ここで描いても、作りかけの画面が見えることはない）
+        self.root.update_idletasks()
+        width, height = self.window_size
+        needed = (max(width, screen.winfo_reqwidth()), max(height, screen.winfo_reqheight()))
+        if needed != (width, height):
+            self.set_window_size(*needed)
 
     def make_header(
         self, screen: tk.Frame, title: str, back: Callable[[], None] | None = None
@@ -204,7 +233,10 @@ class JustDoItApp:
 
         起動直後はPC画面の中央に置く。はみ出す場合はPC画面内に収まるよう位置を寄せる。
         """
-        width, height = self.px(width), self.px(height)
+        self.set_window_size(self.px(width), self.px(height))
+
+    def set_window_size(self, width: int, height: int) -> None:
+        """resize_window の本体（大きさはピクセルで渡す）"""
         # 同じ大きさなら何もしない（設定のタブの切り替えなど。余計な描き直しで画面がちらつかないように）
         if self.window_size == (width, height):
             return
@@ -238,9 +270,8 @@ class JustDoItApp:
 
         配布版は画面だけのアプリで、エラーの内容がどこにも表示されないため、原因を調べられるようにファイルに残す。
         """
-        details = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
-        print(details)
-        log_path = config.append_error_log(details)
+        logger.error("予期しないエラーが起きました", exc_info=(exc_type, exc_value, exc_traceback))
+        log_path = config.get_error_log_path()
         messagebox.showerror(
             "エラー",
             f"予期しないエラーが起きました。\n\n詳しい内容を次のファイルに保存しました:\n{log_path}",
@@ -292,7 +323,7 @@ class JustDoItApp:
                 parent=self.root,
             )
             return False
-        print(f"【ローカル保存完了】{now_str} - {task} ({duration_mins}分)")
+        logger.info("記録しました: %s %s（%d分）", now_str, task, duration_mins)
 
         # 週次レポートに登録済みなら、送信待ちキューに積んでから別スレッドで送る
         if report_service.is_registered():
@@ -301,7 +332,7 @@ class JustDoItApp:
                     config.get_report_queue_path(), [report_service.make_log(now_str, task, duration_mins)]
                 )
             except OSError as e:
-                print(f"⚠️ 週次レポート用の記録を保存できませんでした: {e}")
+                logger.warning("週次レポート用の記録を保存できませんでした: %s", e)
             report_service.start_sync()
         return True
 
@@ -446,6 +477,7 @@ def run() -> None:
             ctypes.windll.shcore.SetProcessDpiAwareness(1)
         except (AttributeError, OSError):
             ctypes.windll.user32.SetProcessDPIAware()
+    config.setup_logging()
     # 以前のバージョンが config.json に保存した週次レポートのトークンを、資格情報マネージャーに移す
     config.migrate_report_token()
     root = tk.Tk()

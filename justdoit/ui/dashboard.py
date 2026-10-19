@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from functools import partial
-import platform
+import sys
 import tkinter as tk
 from tkinter import messagebox
 from typing import TYPE_CHECKING
@@ -23,25 +23,28 @@ from justdoit.records import (
     summarize_period,
 )
 from justdoit.ui import history, timer
-from justdoit.ui.theme import C, PillButton, make_button, make_label, make_link, make_tabs
+from justdoit.ui.theme import C, PillButton, make_button, make_label, make_link, make_tabs, text_width
 
 if TYPE_CHECKING:
     import pandas as pd
 
     from justdoit.ui.app import JustDoItApp
 
-DASHBOARD_SIZE = (720, 540)
+DASHBOARD_SIZE = (740, 540)  # 右の列（よくやったこと）を決まった幅にしても、グラフが狭くならない幅
 EMPTY_SIZE = (420, 340)
 TOP_TASKS = 5
 MAX_TASK_NAME_LENGTH = 10
+HISTORY_LINK_TEXT = "すべての記録を見る・直す  ›"
+NO_TASKS_TEXT = "この期間の記録はありません"
+TASK_TIME_GAP = 16  # よくやったことの、名前と時間の間
 # グラフの横軸の目盛りを何本おきに出すか（月は30本あるので間引く）
 TICK_STEP = {"week": 1, "month": 5, "year": 1}
 
 # グラフの日本語フォント（OSごとに、入っているものを先頭から使う）
 rcParams["font.sans-serif"] = {
-    "Darwin": ["Hiragino Sans", "Hiragino Kaku Gothic ProN", "Arial"],
-    "Windows": ["Yu Gothic", "Meiryo", "MS Gothic", "Arial"],
-}.get(platform.system(), ["Noto Sans CJK JP", "IPAexGothic", "DejaVu Sans"])
+    "darwin": ["Hiragino Sans", "Hiragino Kaku Gothic ProN", "Arial"],
+    "win32": ["Yu Gothic", "Meiryo", "MS Gothic", "Arial"],
+}.get(sys.platform, ["Noto Sans CJK JP", "IPAexGothic", "DejaVu Sans"])
 rcParams["axes.unicode_minus"] = False
 
 
@@ -82,12 +85,18 @@ def show_dashboard(app: JustDoItApp, period: str | None = None, offset: int | No
     body.pack(fill="both", expand=True)
     side = tk.Frame(body, bg=C.bg)
     side.pack(side="right", fill="y", padx=(24, 0))
-    build_top_tasks(side, summary).pack(anchor="w")
-    # 記録の修正・削除は、振り返りの中から開く（メニューをシンプルに保つため）
+    # 右の列は、中身（作業内容の名前の長さ・件数）によらず同じ幅にする
+    # （中身に合わせると、期間を切り替えるたびにグラフの幅とリンクの位置が左右に動くため）
+    tk.Frame(side, bg=C.bg, width=app.px(side_width()), height=0).pack()
+    build_top_tasks(side, summary).pack(fill="x")
+
+    # 記録の修正・削除は、振り返りの中から開く（メニューをシンプルに保つため）。
+    # 灰色の文字で右下の端に置いていたときは気づきにくかったので、「よくやったこと」のすぐ下に、
+    # アクセント色と「›」で置く（ボタンにはせず、画面の静かさは保つ）
     def open_history():
         history.show_history(app, back=lambda: show_dashboard(app))
 
-    make_link(side, "すべての記録を見る・直す", open_history).pack(side="bottom", anchor="w", pady=(0, 8))
+    make_link(side, HISTORY_LINK_TEXT, open_history, accent=True).pack(anchor="w", pady=(14, 0))
     build_chart(app, body, summary).pack(side="left", fill="both", expand=True)
 
 
@@ -141,21 +150,35 @@ def build_stats(screen: tk.Frame, summary: PeriodSummary, records: pd.DataFrame)
         make_label(cell, value, size=18, bold=True).pack(anchor="w")
 
 
+def side_width() -> int:
+    """右の列の幅（いちばん長い作業内容の名前と時間・リンク・「記録はありません」が入る幅）
+
+    フォントは OS ごとに違うので、決まった数字ではなく、実際の文字の幅から決める。
+    """
+    longest_name = "国" * (MAX_TASK_NAME_LENGTH - 1) + "…"
+    return max(
+        text_width([longest_name], 11) + TASK_TIME_GAP + text_width(["999時間 59分"], 11),
+        text_width([HISTORY_LINK_TEXT], 10),
+        text_width([NO_TASKS_TEXT], 11),
+    )
+
+
 def build_top_tasks(parent: tk.Frame, summary: PeriodSummary) -> tk.Frame:
     """よくやったこと（この期間の上位5件）"""
     tasks = tk.Frame(parent, bg=C.bg)
+    tasks.columnconfigure(0, weight=1)  # 時間は列の右端にそろえる
     make_label(tasks, "よくやったこと", size=10, color=C.muted).grid(
         row=0, column=0, columnspan=2, sticky="w", pady=(0, 6)
     )
     if summary.by_task.empty:
-        make_label(tasks, "この期間の記録はありません", size=11, color=C.muted).grid(
+        make_label(tasks, NO_TASKS_TEXT, size=11, color=C.muted).grid(
             row=1, column=0, columnspan=2, sticky="w"
         )
     for row, (task, mins) in enumerate(summary.by_task.head(TOP_TASKS).items(), start=1):
         name = task if len(task) <= MAX_TASK_NAME_LENGTH else task[: MAX_TASK_NAME_LENGTH - 1] + "…"
         make_label(tasks, name, size=11).grid(row=row, column=0, sticky="w", pady=2)
         make_label(tasks, format_hours_mins(int(mins)), size=11, color=C.muted).grid(
-            row=row, column=1, sticky="e", padx=(16, 0), pady=2
+            row=row, column=1, sticky="e", padx=(TASK_TIME_GAP, 0), pady=2
         )
     return tasks
 

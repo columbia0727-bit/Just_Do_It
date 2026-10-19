@@ -7,12 +7,15 @@
 
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path
 import threading
 import urllib.request
 
 from justdoit import config, net
+
+logger = logging.getLogger(__name__)
 
 # 開発者がデプロイした gas/report_service/ の WebアプリURL
 # 環境変数 JUSTDOIT_REPORT_URL が設定されていればそちらを優先する
@@ -202,15 +205,15 @@ def sync_queue(url: str, queue_path: Path, wait: bool = False) -> None:
                     call_service(url, build_payload(item, token))
                 except ReportServiceError as e:
                     if e.code in ("network", "busy"):
-                        print(f"⚠️ 週次レポート用の記録を送信できませんでした（次回再送）: {e}")
+                        logger.info("週次レポート用の記録を送信できませんでした（次回再送）: %s", e)
                         stop = True
                         break
                     if e.code == "unauthorized":
-                        print("⚠️ 週次レポートの登録が解除されていました")
+                        logger.warning("週次レポートの登録が解除されていました")
                         clear_registration()
                         return
                     # 形式エラーなど再送しても成功しない記録は捨てる
-                    print(f"⚠️ 週次レポート用の記録を送信できませんでした（破棄）: {e}")
+                    logger.warning("週次レポート用の記録を送信できませんでした（破棄）: %s", e)
                 processed += 1
 
             # 送信中に追加された記録はキューの末尾にあるので、先頭から送信済みの分だけ取り除く

@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 import sys
 import tempfile
@@ -140,3 +141,36 @@ class ReportTokenTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ErrorLogTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        patcher = mock.patch.object(config, "get_data_dir", return_value=Path(self.tmp.name))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.logger = logging.getLogger("justdoit.test")
+        handler = config.ErrorLogHandler(logging.WARNING)
+        self.logger.addHandler(handler)
+        self.addCleanup(self.logger.removeHandler, handler)
+
+    def test_only_warnings_are_written(self):
+        self.logger.info("記録しました")
+        self.logger.warning("通知を出せませんでした")
+
+        text = config.get_error_log_path().read_text(encoding="utf-8")
+        self.assertIn("通知を出せませんでした", text)
+        # 問い合わせのときに原因を絞り込めるよう、OS も残す
+        self.assertIn(config.os_description(), text)
+        self.assertNotIn("記録しました", text)
+
+    def test_traceback_is_written(self):
+        try:
+            raise ValueError("こわれた")
+        except ValueError:
+            self.logger.exception("予期しないエラーが起きました")
+
+        text = config.get_error_log_path().read_text(encoding="utf-8")
+        self.assertIn("Traceback", text)
+        self.assertIn("ValueError: こわれた", text)

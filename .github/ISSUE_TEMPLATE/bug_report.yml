@@ -1,0 +1,46 @@
+# 不具合の報告フォーム（GitHub の「Issues」→「New issue」で選べる）
+# 原因を絞り込むのに必要なこと（何が起きたか・どうすると起きるか・環境）を、1回で書いてもらう
+name: 不具合の報告
+description: アプリが思ったとおりに動かないとき
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        報告ありがとうございます。わかる範囲で書いてください。
+        作業内容やメールアドレスなど、人に見られたくない内容は書かないでください（Issue は誰でも読めます）。
+  - type: textarea
+    id: what
+    attributes:
+      label: 何が起きましたか
+      description: エラーの文言があれば、そのまま書いてください。画面の画像を貼り付けることもできます。
+      placeholder: 例）「記録する」を押すと「保存エラー」と出て、記録できない
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: どうすると起きますか
+      description: 何をした後に起きたかを、順番に書いてください。毎回起きるか、ときどきかも教えてください。
+      placeholder: |
+        1. 「5分だけやる」を押す
+        2. タイマーが終わってから、やったことを入力して「記録して休憩する」を押す
+        3. 毎回起きる
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 本当はどうなってほしいですか
+      placeholder: 例）記録されて、休憩タイマーに進む
+  - type: textarea
+    id: support-info
+    attributes:
+      label: 不具合の報告用の情報
+      description: |
+        アプリの「設定」を開き、いちばん下の「不具合を報告する」を押すとコピーされるので、ここに貼り付けてください
+        （バージョン・OS・最近のエラーなどが入ります。作業内容とメールアドレスは入りません）。
+        アプリが起動しない場合は、使っている OS（Windows 11・macOS 15 など）とアプリのバージョンを書いてください。
+      render: text
+    validations:
+      required: true
