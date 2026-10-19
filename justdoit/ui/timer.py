@@ -5,13 +5,13 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import datetime, timedelta
 import tkinter as tk
-from tkinter import messagebox
 from typing import TYPE_CHECKING
 
 from PIL import ImageTk
 
 from justdoit import config, focus
 from justdoit.records import RECENT_DAYS, load_records, recent_tasks, recorded_at_on, validate_record
+from justdoit.ui import confirm
 from justdoit.ui.datepicker import DatePicker
 from justdoit.ui.theme import (
     C,
@@ -137,23 +137,31 @@ def show_focus_timer(app: JustDoItApp, duration_seconds: int, done_mins: int = 0
         show_record_form(app, elapsed_mins(), after_save=app.show_main_menu)
 
     def confirm_close() -> bool:
-        answer = messagebox.askyesnocancel(
+        answer = confirm.ask(
+            app,
             "タイマーの途中です",
-            f"ここまでの {elapsed_mins()}分を記録しますか？\n\n"
-            "はい：記録画面へ進む\nいいえ：記録せずに終了する\nキャンセル：タイマーを続ける",
-            parent=app.root,
+            f"ここまでの {elapsed_mins()}分を記録しますか？",
+            [
+                confirm.Choice("記録してから終える", "record"),
+                confirm.Choice("記録せずに終了する", "close"),
+                confirm.Choice("タイマーを続ける", "continue", safe=True),
+            ],
         )
-        if answer:
+        if answer == "record":
             finish_early()
-        elif answer is False:
+        elif answer == "close":
             focus.clear_unsaved(config.get_unsaved_timer_path())
-        return answer is False
+        return answer == "close"
 
     def confirm_quit():
-        if messagebox.askyesno(
-            "タイマーをやめる",
-            f"ここまでの {elapsed_mins()}分は記録されません。\nタイマーをやめてメニューに戻りますか？",
-            parent=app.root,
+        if confirm.ask(
+            app,
+            "タイマーをやめますか？",
+            f"ここまでの {elapsed_mins()}分は記録されません。",
+            [
+                confirm.Choice("やめてメニューに戻る", True),
+                confirm.Choice("タイマーを続ける", False, safe=True),
+            ],
         ):
             focus.clear_unsaved(config.get_unsaved_timer_path())
             app.show_main_menu()
@@ -286,7 +294,12 @@ def confirm_discard(app: JustDoItApp, task_entry: tk.Entry) -> bool:
     """入力の途中で閉じようとしたときの確認（何も入力していなければそのまま閉じる）"""
     if not task_entry.get().strip():
         return True
-    return messagebox.askyesno("終了の確認", "入力した内容を記録せずに終了しますか？", parent=app.root)
+    return confirm.ask(
+        app,
+        "記録せずに終了しますか？",
+        "入力した内容は記録されません。",
+        [confirm.Choice("記録せずに終了する", True), confirm.Choice("入力に戻る", False, safe=True)],
+    )
 
 
 # ==========================================

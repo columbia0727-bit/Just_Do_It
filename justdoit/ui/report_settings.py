@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 from justdoit import config, report_service
 from justdoit.records import format_hours_mins
 from justdoit.report_service import ReportServiceError
+from justdoit.ui import confirm
 from justdoit.ui.theme import C, make_button, make_entry, make_label, make_link, make_select
 
 if TYPE_CHECKING:
@@ -467,13 +468,14 @@ def send_test_report(app: JustDoItApp, status: tk.Label) -> None:
 # ==========================================
 def remove_this_pc(app: JustDoItApp) -> None:
     """この PC だけ登録を解除する（ほかの PC の同期・メール・サーバーの記録はそのまま）"""
-    if app.busy or not messagebox.askyesno(
-        "この PC の登録を解除",
-        "この PC だけ、週次レポートと同期の登録を解除しますか？\n\n"
+    if app.busy or not confirm.ask(
+        app,
+        "この PC の登録を解除しますか？",
+        "この PC だけ、週次レポートと同期の登録を解除します。\n\n"
         "・同じメールアドレスで登録したほかの PC は、これまでどおり同期できます\n"
         "・週次レポートのメールも、これまでどおり届きます\n"
         "・この PC の記録は残ります",
-        parent=app.root,
+        [confirm.Choice("この PC の登録を解除する", True), confirm.Choice("やめておく", False, safe=True)],
     ):
         return
     token = config.get_report_token()
@@ -513,15 +515,15 @@ def remove_this_pc(app: JustDoItApp) -> None:
 
 def unregister(app: JustDoItApp) -> None:
     """すべての PC で配信と同期を停止し、サーバーの記録を消す"""
-    if not messagebox.askyesno(
-        "すべての PC で配信を停止",
-        "週次レポートの配信と、ほかの PC との同期を停止しますか？\n\n"
+    if not confirm.ask(
+        app,
+        "すべての PC で配信を停止しますか？",
+        "週次レポートの配信と、ほかの PC との同期を停止します。\n\n"
         "・同じメールアドレスで登録したすべての PC で、登録が解除されます\n"
         "・サーバーに預けている記録（最大400日分）は、すべて削除されます\n"
         "・それぞれの PC の記録は残ります\n\n"
         "この PC だけ使わなくなる場合は「この PC の登録を解除」を使ってください。",
-        icon="warning",
-        parent=app.root,
+        [confirm.Choice("すべての PC で停止する", True), confirm.Choice("やめておく", False, safe=True)],
     ):
         return
 

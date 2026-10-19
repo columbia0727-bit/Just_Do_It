@@ -20,6 +20,7 @@ from justdoit.records import (
     validate_record,
     validate_when,
 )
+from justdoit.ui import confirm
 from justdoit.ui.theme import C, make_button, make_entry, make_label, make_select, ui_font
 
 if TYPE_CHECKING:
@@ -195,10 +196,11 @@ class RecordForm:
             return
         record = self.record
         when = record.recorded_at.strftime("%m/%d %H:%M")
-        if messagebox.askyesno(
-            "削除の確認",
-            f"{when}「{record.task}」（{record.minutes}分）を削除しますか？",
-            parent=self.app.root,
+        if confirm.ask(
+            self.app,
+            "記録を削除しますか？",
+            f"{when}「{record.task}」（{record.minutes}分）",
+            [confirm.Choice("削除する", True), confirm.Choice("やめておく", False, safe=True)],
         ):
             self.apply(
                 lambda: delete_record(self.csv_path, record.row_index),
