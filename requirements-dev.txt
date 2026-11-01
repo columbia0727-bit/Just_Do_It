@@ -1,7 +1,7 @@
 # ビルドとコードのチェックに必要なライブラリ（アプリに何を同梱するか・チェックの結果が変わらないよう、バージョンを固定する）
 -r requirements.txt
 pyinstaller==6.22.3
-pyinstaller-hooks-contrib==2026.8
-ruff==0.17.0
-mypy==2.4.0
-coverage==7.16.2
+pyinstaller-hooks-contrib==2026.9
+ruff==0.17.3
+mypy==2.4.1
+coverage==7.17.0
